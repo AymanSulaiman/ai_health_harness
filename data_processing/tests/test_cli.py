@@ -37,7 +37,7 @@ def test_a_step_name_runs_only_that_step(monkeypatch, calls):
 def test_anything_else_prints_usage_and_runs_nothing(monkeypatch, calls, args):
     with pytest.raises(SystemExit) as exit_info:
         run(monkeypatch, *args)
-    assert "uv run ai-health-harness" in str(exit_info.value.code)
+    assert "uv run --project data_processing ai-health-harness" in str(exit_info.value.code)
     assert calls == []
 
 

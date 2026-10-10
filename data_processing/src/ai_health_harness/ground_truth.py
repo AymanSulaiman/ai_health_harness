@@ -8,7 +8,7 @@ against schemas/ground_truth.schema.json, the contract the TypeScript harness re
 - allergies: active AllergyIntolerances, with their reactions
 - conditions: active Conditions, minus social and administrative ones (NON_CLINICAL)
 
-    uv run python -m ai_health_harness.ground_truth spot-check [SEED]   # 10 records vs raw FHIR
+    uv run --project data_processing python -m ai_health_harness.ground_truth spot-check [SEED]   # 10 records vs raw FHIR
 """
 
 import datetime as dt
@@ -24,7 +24,7 @@ import jsonschema
 from ai_health_harness import synthea
 
 OUT = Path("data/ground_truth.jsonl")
-SCHEMA = Path(__file__).parents[2] / "schemas" / "ground_truth.schema.json"
+SCHEMA = Path(__file__).parents[3] / "schemas" / "ground_truth.schema.json"
 AS_OF = dt.date.fromisoformat(synthea.SIMULATION_END).isoformat()
 
 # Synthea records social determinants and admin reminders as active Conditions, and

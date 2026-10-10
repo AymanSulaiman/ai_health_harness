@@ -2,7 +2,7 @@
 
 Generates a reproducible synthetic population with Synthea as FHIR R4, and loads it
 into DuckDB: one `raw_fhir` table per resource type in `data/warehouse.duckdb`. The
-seed, population size and Synthea version are pinned in `synthea.py`.
+seed, population size and Synthea version are pinned in `data_processing/src/ai_health_harness/synthea.py`.
 
 It then builds the ground truth: one record per living patient in
 `data/ground_truth.jsonl`, listing what a correct summary must contain (see below).
@@ -11,15 +11,15 @@ Needs [uv](https://docs.astral.sh/uv/) and Docker (Synthea runs in a Java contai
 Run from the repository root:
 
 ```
-uv run ai-health-harness                # every step, in order
-uv run ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
-uv run ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
-uv run python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
+uv run --project data_processing ai-health-harness                # every step, in order
+uv run --project data_processing ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
+uv run --project data_processing ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
+uv run --project data_processing python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
 ```
 
 Rerunning replaces the `raw_fhir` schema; the same seed gives the same patients.
 
-Tests: `uv run pytest`
+Tests: `uv run --project data_processing pytest`
 
 ## FHIR resources
 
@@ -82,7 +82,7 @@ is validated against it when built.
 To check records by hand against the FHIR they came from:
 
 ```
-uv run python -m ai_health_harness.ground_truth spot-check
+uv run --project data_processing python -m ai_health_harness.ground_truth spot-check
 ```
 
 It prints the same 10 patients each time, each record beside every active raw item,

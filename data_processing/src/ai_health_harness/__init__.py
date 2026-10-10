@@ -1,8 +1,8 @@
 """The whole pipeline behind one command. Run it from the repository root.
 
-uv run ai-health-harness               every step, in order
-uv run ai-health-harness generate      generate seeded Synthea patients into DuckDB
-uv run ai-health-harness ground-truth  build data/ground_truth.jsonl from the patients
+uv run --project data_processing ai-health-harness               every step, in order
+uv run --project data_processing ai-health-harness generate      generate seeded Synthea patients into DuckDB
+uv run --project data_processing ai-health-harness ground-truth  build data/ground_truth.jsonl from the patients
 """
 
 import sys
