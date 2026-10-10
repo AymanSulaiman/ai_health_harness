@@ -4,11 +4,16 @@ Generates a reproducible synthetic population with Synthea as FHIR R4, and loads
 into DuckDB: one `raw_fhir` table per resource type in `data/warehouse.duckdb`. The
 seed, population size and Synthea version are pinned in `synthea.py`.
 
+It then builds the ground truth: one record per living patient in
+`data/ground_truth.jsonl`, listing what a correct summary must contain (see below).
+
 Needs [uv](https://docs.astral.sh/uv/) and Docker (Synthea runs in a Java container).
 Run from the repository root:
 
 ```
-uv run ai-health-harness generate
+uv run ai-health-harness                # every step, in order
+uv run ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
+uv run ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
 uv run python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
 ```
 
@@ -57,3 +62,28 @@ Things worth knowing when querying:
   AllergyIntolerance, `status` on MedicationRequest.
 - Most prescriptions are `completed`; only a small share are `active`, and some active
   ones have no dose or timing (`dosageInstruction`). Most patients have no allergies.
+
+## Ground truth
+
+`data/ground_truth.jsonl` has one JSON record per living patient, as of the simulation
+end date. Its shape is the contract in `schemas/ground_truth.schema.json`; every record
+is validated against it when built.
+
+- **medications**: active MedicationRequests with RxNorm code, dose, timing
+  (`frequency` per `period` `period_unit`, so 2 per 1 d is twice daily) and whether the
+  drug is taken as needed. Synthea leaves dose and timing out of many prescriptions;
+  those fields are then `null`, and the drug is still listed.
+- **allergies**: active AllergyIntolerances with their reactions.
+- **conditions**: active Conditions, except the social and administrative entries
+  Synthea also records as conditions (employment, education, housing, "medication
+  review due", ...). The excluded codes are listed in `NON_CLINICAL` in
+  `ground_truth.py`.
+
+To check records by hand against the FHIR they came from:
+
+```
+uv run python -m ai_health_harness.ground_truth spot-check
+```
+
+It prints the same 10 patients each time, each record beside every active raw item,
+with excluded conditions marked `[excluded]`.

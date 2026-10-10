@@ -1,20 +1,27 @@
 """The whole pipeline behind one command. Run it from the repository root.
 
-uv run ai-health-harness              every step, in order
-uv run ai-health-harness generate     generate seeded Synthea patients into DuckDB
+uv run ai-health-harness               every step, in order
+uv run ai-health-harness generate      generate seeded Synthea patients into DuckDB
+uv run ai-health-harness ground-truth  build data/ground_truth.jsonl from the patients
 """
 
 import sys
 import time
 
 
-def generate() -> None:
+def run_generate() -> None:
     from ai_health_harness import synthea
 
     synthea.run()
 
 
-STEPS = {"generate": generate}
+def run_ground_truth() -> None:
+    from ai_health_harness import ground_truth
+
+    ground_truth.run()
+
+
+STEPS = {"generate": run_generate, "ground-truth": run_ground_truth}
 
 
 def main() -> None:

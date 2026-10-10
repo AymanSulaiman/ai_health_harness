@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ground_truth.schema.json",
+  "title": "GroundTruth",
+  "description": "What a correct summary of one living patient must contain, as of the simulation end date. One record per line in data/ground_truth.jsonl.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["patient_id", "as_of", "medications", "allergies", "conditions"],
+  "properties": {
+    "patient_id": { "type": "string", "description": "FHIR Patient.id" },
+    "as_of": { "type": "string", "format": "date" },
+    "medications": {
+      "description": "Active MedicationRequests, sorted by name",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "rxnorm", "as_needed", "dose", "timing"],
+        "properties": {
+          "name": { "type": "string", "description": "Drug with strength and form, e.g. 'Simvastatin 10 MG Oral Tablet'" },
+          "rxnorm": { "type": "string" },
+          "as_needed": {
+            "type": ["boolean", "null"],
+            "description": "null when the prescription has no dosage instructions"
+          },
+          "dose": {
+            "type": ["number", "null"],
+            "description": "Units per administration (the strength is in the name); null when not recorded"
+          },
+          "timing": {
+            "description": "frequency times per period period_unit, e.g. 2 per 1 d = twice daily; null when not recorded",
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["frequency", "period", "period_unit"],
+                "properties": {
+                  "frequency": { "type": "integer", "minimum": 1 },
+                  "period": { "type": "number", "exclusiveMinimum": 0 },
+                  "period_unit": { "enum": ["s", "min", "h", "d", "wk", "mo", "a"] }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "allergies": {
+      "description": "Active AllergyIntolerances, sorted by substance",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["substance", "snomed", "category", "type", "reactions"],
+        "properties": {
+          "substance": { "type": "string" },
+          "snomed": { "type": "string" },
+          "category": { "enum": ["food", "medication", "environment", "biologic", null] },
+          "type": { "enum": ["allergy", "intolerance", null] },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["manifestation", "severity"],
+              "properties": {
+                "manifestation": { "type": "string" },
+                "severity": { "enum": ["mild", "moderate", "severe", null] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "conditions": {
+      "description": "Active clinical Conditions (social and administrative entries excluded), sorted by name",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "system", "code", "onset"],
+        "properties": {
+          "name": { "type": "string" },
+          "system": { "type": "string", "description": "Code system URI, SNOMED CT or ICD-10" },
+          "code": { "type": "string" },
+          "onset": { "type": ["string", "null"], "format": "date" }
+        }
+      }
+    }
+  }
+}
