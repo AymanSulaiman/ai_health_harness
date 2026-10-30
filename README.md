@@ -308,3 +308,32 @@ are tables in the `staging` schema:
 Keys are tested unique and not null, every run's test case and every score's run must
 exist, and freshness warns when no run was traced in 7 days. The trace files must exist
 first: run `bun run eval` at least once.
+
+The marts, in the `marts` schema, are what to query:
+
+| Model | One row per |
+|---|---|
+| `fct_scored_runs` | run: every score as a column, `passed`, keys to the dimensions; built incrementally |
+| `dim_agent_version` | agent version, prompt version and model together (`agent_key`) |
+| `dim_judge_version` | judge model and judge prompt version together (`judge_key`) |
+| `dim_test_case` | test case and category, so a case with two tags has two rows |
+
+`make docs` builds and serves the dbt docs site, with every column described.
+
+Which categories did one agent version regress on, compared with another:
+
+```sql
+with by_category as (
+    select d.category, f.agent_key, avg(f.passed::int) as pass_rate, count(*) as runs
+    from marts.fct_scored_runs f
+    join marts.dim_test_case d on d.case_id = f.test_case_id
+    group by all
+)
+select after.category, before.pass_rate as before, after.pass_rate as after, after.runs
+from by_category after
+join by_category before using (category)
+where before.agent_key = '1|1|ollama-cloud/gpt-oss:20b'
+  and after.agent_key = '2|1|ollama-cloud/gpt-oss:20b'
+  and after.pass_rate < before.pass_rate
+order by after.pass_rate - before.pass_rate
+```

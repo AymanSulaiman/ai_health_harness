@@ -1,5 +1,5 @@
 # ponytail: dev target lands with KAN-27
-.PHONY: install generate schema transform test typecheck check
+.PHONY: install generate schema transform docs test typecheck check
 
 install:
 	uv sync --project data_processing
@@ -17,6 +17,10 @@ transform:
 	@ls data/traces/*.jsonl >/dev/null 2>&1 || { echo "no trace files in data/traces: run 'bun run eval' first"; exit 1; }
 	$(DBT) source freshness $(DBT_ARGS)
 	$(DBT) build $(DBT_ARGS)
+
+docs:
+	$(DBT) docs generate $(DBT_ARGS)
+	$(DBT) docs serve $(DBT_ARGS)
 
 test:
 	uv run --project data_processing pytest

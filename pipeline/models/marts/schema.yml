@@ -1,0 +1,141 @@
+version: 2
+
+models:
+  - name: fct_scored_runs
+    description: >
+      Grain: one row per agent run on one test case (a run is always of exactly one case).
+      Every score is a column, 0 to 1; null when that scorer did not run (the judge was
+      skipped, or the run failed before scoring). Built incrementally on created_at.
+    columns:
+      - name: run_id
+        description: Unique per run, from the trace event.
+        data_tests: [unique, not_null]
+      - name: suite_run_id
+        description: Shared by every run in one pass over a dataset (bun run eval).
+        data_tests: [not_null]
+      - name: test_case_id
+        description: The case run, e.g. v1-006. Join to dim_test_case.case_id.
+        data_tests: [not_null]
+      - name: dataset_version
+        description: Dataset the case came from, e.g. v1.
+      - name: agent_key
+        description: "agent_version|prompt_version|agent_model. Join to dim_agent_version."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: ref('dim_agent_version'), field: agent_key }
+      - name: judge_key
+        description: "judge_model|judge_prompt_version, or null when no judge ran. Join to dim_judge_version."
+        data_tests:
+          - relationships:
+              arguments: { to: ref('dim_judge_version'), field: judge_key }
+      - name: created_at
+        description: When the run's trace event was written.
+        data_tests: [not_null]
+      - name: error_stage
+        description: Where the run failed (model, parse, score), or null.
+      - name: passed
+        description: No error, and every score passed, the judge's included when it ran. The headline pass/fail.
+        data_tests: [not_null]
+      - name: deterministic_passed
+        description: Every deterministic scorer passed. False when the run failed before scoring.
+        data_tests: [not_null]
+      - name: judge_passed
+        description: Every judge score passed; null when no judge ran.
+      - name: schema_valid
+        description: 1 if the agent produced a summary.
+      - name: medication_recall
+        description: Share of the patient's medications the summary lists.
+      - name: medication_precision
+        description: Share of listed medications on record; a stopped drug counts against it.
+      - name: allergy_recall
+        description: Share of the patient's allergies listed.
+      - name: dose_match
+        description: Share of listed medications with a recorded dose or timing that have both right.
+      - name: hallucinations
+        description: Share of listed medications and allergies that are on record (1 means nothing made up).
+      - name: judge_faithfulness
+        description: Judge grade, 1-5 scaled to 0-1. Everything in the summary is supported by the note.
+      - name: judge_usefulness
+        description: Judge grade, 1-5 scaled to 0-1. A clinician could act on it at a glance.
+      - name: judge_omissions
+        description: Judge grade, 1-5 scaled to 0-1. Nothing clinically important is missing.
+      - name: latency_ms
+        description: Wall time of the agent run, judge excluded.
+      - name: input_tokens
+        description: Agent input tokens across attempts; null if the provider did not report them.
+      - name: output_tokens
+        description: Agent output tokens across attempts.
+      - name: tool_call_count
+        description: Tool calls the agent made.
+
+  - name: dim_agent_version
+    description: "Grain: one row per agent version, meaning agent code, prompt and model together; a change to any is a new version."
+    columns:
+      - name: agent_key
+        description: "agent_version|prompt_version|agent_model."
+        data_tests: [unique, not_null]
+      - name: agent_version
+        description: AGENT_VERSION in agent/src/summarise.ts.
+      - name: prompt_version
+        description: PROMPT_VERSION in agent/src/summarise.ts.
+      - name: agent_model
+        description: Model spec from models.json, e.g. ollama-cloud/gpt-oss:20b.
+      - name: first_run_at
+        description: Earliest run of this version.
+      - name: last_run_at
+        description: Latest run of this version.
+      - name: run_count
+        description: Runs of this version, over all suite runs.
+
+  - name: dim_judge_version
+    description: "Grain: one row per judge version, meaning judge model and judge prompt together."
+    columns:
+      - name: judge_key
+        description: "judge_model|judge_prompt_version."
+        data_tests: [unique, not_null]
+      - name: judge_model
+        description: Model spec from models.json.
+      - name: judge_prompt_version
+        description: JUDGE_PROMPT_VERSION in harness/src/judge.ts.
+      - name: first_run_at
+        description: Earliest run scored by this judge version.
+      - name: last_run_at
+        description: Latest run scored by this judge version.
+      - name: run_count
+        description: Runs this judge version scored.
+
+  - name: dim_test_case
+    description: >
+      Grain: one row per test case and category. A case tagged dose_change and
+      polypharmacy has two rows, so joining runs to it groups them by category directly;
+      a case with no tags has one row with category 'untagged'. Count distinct case_id
+      for totals.
+    columns:
+      - name: test_case_category_key
+        description: "case_id|category."
+        data_tests: [unique, not_null]
+      - name: case_id
+        description: e.g. v1-006.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: ref('stg_test_cases'), field: case_id }
+      - name: dataset_version
+        description: e.g. v1.
+      - name: category
+        description: One of the case's tags (see the README's Test cases section), or 'untagged'.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: { values: [simple, polypharmacy, discontinued_med, buried_allergy, dose_change, abbreviations, untagged] }
+      - name: is_trap
+        description: The category is a planted trap rather than a size tag.
+      - name: all_categories
+        description: Every tag the case carries.
+      - name: medication_count
+        description: Current medications on the patient's record.
+      - name: allergy_count
+        description: Allergies on the record.
+      - name: condition_count
+        description: Active conditions on the record.

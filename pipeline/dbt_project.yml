@@ -10,3 +10,6 @@ models:
       # root, so a view would break for anything querying from another directory (the dashboard).
       +materialized: table
       +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
