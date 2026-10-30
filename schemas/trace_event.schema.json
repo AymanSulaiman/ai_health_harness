@@ -126,6 +126,90 @@
       ]
     },
     "parsed_output": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "narrative": {
+              "type": "string",
+              "description": "A few sentences a clinician could read at a glance"
+            },
+            "medications": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Drug with strength and form, as written in the note"
+                  },
+                  "dose": {
+                    "description": "Amount per dose now in effect, e.g. '1 tablet'; null if not stated",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "frequency": {
+                    "description": "e.g. 'twice daily', 'as needed'; null if not stated",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "dose",
+                  "frequency"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Medications the patient currently takes"
+            },
+            "allergies": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "substance": {
+                    "type": "string"
+                  },
+                  "reactions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Empty if none are stated"
+                  }
+                },
+                "required": [
+                  "substance",
+                  "reactions"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "conditions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Active conditions"
+            }
+          },
+          "required": [
+            "narrative",
+            "medications",
+            "allergies",
+            "conditions"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
       "description": "raw_output parsed into the summary; null when parsing failed"
     },
     "scores": {

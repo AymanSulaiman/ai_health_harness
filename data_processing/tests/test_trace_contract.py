@@ -78,5 +78,13 @@ def test_duckdb_reads_the_events(jsonl):
         assert errors == [("run-3", "model"), ("run-4", "parse")]
 
         assert con.sql("SELECT count(*) FROM raw_trace, unnest(tool_calls)").fetchone() == (2,)
+        meds = con.sql(
+            "SELECT run_id, m.name, m.dose, m.frequency"
+            " FROM raw_trace, unnest(parsed_output.medications) AS t(m) ORDER BY run_id"
+        ).fetchall()
+        assert meds == [
+            ("run-1", "lisinopril 10 MG Oral Tablet", "1 tablet", "twice daily"),
+            ("run-2", "albuterol Inhaler", None, "as needed"),
+        ]
         text = con.sql("SELECT raw_output FROM raw_trace WHERE run_id = 'run-2'").fetchone()
         assert text is not None and "ünïcode" in text[0] and "\n" in text[0]

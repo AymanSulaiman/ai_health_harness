@@ -15,6 +15,19 @@ const base = {
   created_at: "2026-10-30T18:00:00.000Z",
 };
 
+const summary = {
+  narrative: "55-year-old woman with hypertension, stable on lisinopril.",
+  medications: [{ name: "lisinopril 10 MG Oral Tablet", dose: "1 tablet", frequency: "twice daily" }],
+  allergies: [],
+  conditions: ["Essential hypertension"],
+};
+const awkward = {
+  narrative: 'Free text with ünïcode, "quotes", and a\nnewline.',
+  medications: [{ name: "albuterol Inhaler", dose: null, frequency: "as needed" }],
+  allergies: [{ substance: "shellfish", reactions: ["anaphylaxis"] }, { substance: "mold", reactions: [] }],
+  conditions: [],
+};
+
 export const examples: TraceEvent[] = [
   // passed, deterministic scorers only
   {
@@ -24,8 +37,8 @@ export const examples: TraceEvent[] = [
     input_tokens: 812,
     output_tokens: 140,
     latency_ms: 2300,
-    raw_output: '{"medications":[{"name":"lisinopril","dose":1}],"allergies":[]}',
-    parsed_output: { medications: [{ name: "lisinopril", dose: 1 }], allergies: [] },
+    raw_output: JSON.stringify(summary),
+    parsed_output: summary,
     scores: [
       { scorer: "medication_recall", value: 1, passed: true, detail: null },
       { scorer: "allergy_recall", value: 1, passed: true, detail: null },
@@ -46,8 +59,8 @@ export const examples: TraceEvent[] = [
     input_tokens: 1204,
     output_tokens: 233,
     latency_ms: 4100,
-    raw_output: "Summary: ... (free text, ünïcode, \"quotes\", and a\nnewline)",
-    parsed_output: { medications: [], allergies: ["shellfish"], notes: [1, true, null, { deep: ["x"] }] },
+    raw_output: "```json\n" + JSON.stringify(awkward) + "\n```",
+    parsed_output: awkward,
     scores: [
       { scorer: "allergy_recall", value: 0.5, passed: false, detail: "missed latex" },
       { scorer: "judge", value: 0.75, passed: true, detail: "Accurate but omits the dose change." },

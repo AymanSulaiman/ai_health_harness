@@ -1,5 +1,12 @@
 {
   "name": "ai-health-harness",
   "private": true,
-  "workspaces": ["agent", "harness", "shared-types"]
+  "workspaces": [
+    "agent",
+    "harness",
+    "shared-types"
+  ],
+  "scripts": {
+    "agent": "bun agent/src/cli.ts"
+  }
 }

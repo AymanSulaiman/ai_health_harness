@@ -189,6 +189,22 @@ the APIs' own structured-output options, so the caller still validates the reply
 `agent/src/model.live.test.ts` makes one small call to each of the agent and judge
 models, and skips when their key is not set (as in CI).
 
+## Agent
+
+The summariser (`agent/src/summarise.ts`) reads one note and returns a `Summary`:
+a short narrative, plus the medications (name, dose, frequency), allergies (substance,
+reactions) and active conditions. The `Summary` schema lives in `shared-types`.
+
+```
+bun run agent                 # the first 5 test cases
+bun run agent v1-006 v1-012   # these cases
+```
+
+It prints each summary with its latency and token counts. `summarise` never throws:
+a failed model call returns a `model` error, and a reply that does not validate is
+retried once with the problem pointed out, then returns a `parse` error with the last
+reply kept. The prompt is `SYSTEM_PROMPT`, versioned by `PROMPT_VERSION`.
+
 ## Trace events
 
 Each agent run on one test case produces one trace event: which agent, model and
