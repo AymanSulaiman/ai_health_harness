@@ -1,0 +1,123 @@
+version: 2
+
+# What the dashboard reads; it never queries raw, staging or marts directly. Rates are 0-1;
+# mean_<scorer> columns are null where that scorer never ran (no judge).
+
+models:
+  - name: agg_version_summary
+    description: "Grain: one row per agent version, over every run of it."
+    columns:
+      - name: agent_key
+        description: "agent_version|prompt_version|agent_model."
+        data_tests: [unique, not_null]
+      - name: first_run_at
+        description: When this version first ran; versions are ordered by it.
+      - name: suite_count
+        description: Suite runs of this version.
+      - name: run_count
+        description: Runs of this version.
+      - name: case_count
+        description: Distinct test cases it ran.
+      - name: pass_rate
+        description: Share of runs that passed every check.
+        data_tests: [not_null]
+      - name: deterministic_pass_rate
+        description: Share of runs that passed every deterministic scorer.
+      - name: judge_pass_rate
+        description: Share of judged runs that passed every judge score.
+      - name: error_rate
+        description: Share of runs that failed with an error.
+      - name: p50_latency_ms
+        description: Median agent latency.
+      - name: p95_latency_ms
+        description: 95th percentile agent latency.
+      - name: mean_input_tokens
+        description: Agent input tokens per run.
+      - name: mean_output_tokens
+        description: Agent output tokens per run.
+      - name: total_tokens
+        description: Agent input plus output tokens over all runs.
+
+  - name: agg_version_category
+    description: >
+      Grain: one row per agent version and test category, with the same metrics as
+      agg_version_summary. A run counts in every category its case carries.
+    data_tests:
+      - unique:
+          arguments: { column_name: "agent_key || '|' || category" }
+    columns:
+      - name: agent_key
+        data_tests: [not_null]
+      - name: category
+        description: A test-case tag, or 'untagged'.
+        data_tests: [not_null]
+      - name: is_trap
+        description: The category is a planted trap.
+
+  - name: agg_version_case_diff
+    description: >
+      Grain: one row per agent version and test case, for versions with a predecessor (the
+      version that first ran just before). Compares each version's latest suite run with its
+      predecessor's, on the cases both ran.
+    columns:
+      - name: version_case_key
+        description: "agent_key|test_case_id."
+        data_tests: [unique, not_null]
+      - name: previous_agent_key
+        description: The predecessor version.
+        data_tests: [not_null]
+      - name: passed_before
+        description: Passed in the predecessor's latest suite run.
+      - name: passed_now
+        description: Passed in this version's latest suite run.
+      - name: change
+        description: newly_failing, newly_passing, still_passing or still_failing.
+        data_tests:
+          - accepted_values:
+              arguments: { values: [newly_failing, newly_passing, still_passing, still_failing] }
+
+  - name: agg_version_diff
+    description: >
+      Grain: one row per agent version and test category, against its predecessor: pass
+      rates over all runs of each, and counts of cases that newly fail or newly pass.
+    columns:
+      - name: version_category_key
+        description: "agent_key|category."
+        data_tests: [unique, not_null]
+      - name: pass_rate_before
+        description: The predecessor's pass rate in this category.
+      - name: pass_rate_now
+        description: This version's pass rate in this category.
+      - name: pass_rate_change
+        description: pass_rate_now minus pass_rate_before; negative is a regression.
+      - name: newly_failing
+        description: Cases in this category that passed before and fail now.
+      - name: newly_passing
+        description: Cases in this category that failed before and pass now.
+      - name: cases_compared
+        description: Cases in this category run by both versions' latest suites.
+
+unit_tests:
+  - name: case_diff_compares_latest_suites_with_the_predecessor
+    description: >
+      v2 follows v1. v1 ran twice; only its later suite counts, where a passed and b failed.
+      In v2, a fails and b passes. c ran only in v2, so it is not compared.
+    model: agg_version_case_diff
+    given:
+      - input: ref('dim_agent_version')
+        rows:
+          - { agent_key: v1, first_run_at: "2026-01-01 00:00:00+00" }
+          - { agent_key: v2, first_run_at: "2026-02-01 00:00:00+00" }
+      - input: ref('fct_scored_runs')
+        rows:
+          - { agent_key: v1, suite_run_id: s1, test_case_id: a, passed: false, created_at: "2026-01-01 00:00:00+00" }
+          - { agent_key: v1, suite_run_id: s1, test_case_id: b, passed: true, created_at: "2026-01-01 00:00:00+00" }
+          - { agent_key: v1, suite_run_id: s2, test_case_id: a, passed: true, created_at: "2026-01-15 00:00:00+00" }
+          - { agent_key: v1, suite_run_id: s2, test_case_id: b, passed: false, created_at: "2026-01-15 00:00:00+00" }
+          - { agent_key: v2, suite_run_id: s3, test_case_id: a, passed: false, created_at: "2026-02-01 00:00:00+00" }
+          - { agent_key: v2, suite_run_id: s3, test_case_id: b, passed: true, created_at: "2026-02-01 00:00:00+00" }
+          - { agent_key: v2, suite_run_id: s3, test_case_id: c, passed: true, created_at: "2026-02-01 00:00:00+00" }
+    expect:
+      rows:
+        - { agent_key: v2, previous_agent_key: v1, test_case_id: a, change: newly_failing }
+        - { agent_key: v2, previous_agent_key: v1, test_case_id: b, change: newly_passing }

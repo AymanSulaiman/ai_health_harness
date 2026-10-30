@@ -13,3 +13,6 @@ models:
     marts:
       +materialized: table
       +schema: marts
+    serving:
+      +materialized: table
+      +schema: serving

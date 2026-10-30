@@ -320,6 +320,22 @@ The marts, in the `marts` schema, are what to query:
 
 `make docs` builds and serves the dbt docs site, with every column described.
 
+The serving tables, in the `serving` schema, are what the dashboard reads; it never
+queries the layers below. They are small (a row per version, or per version and category
+or case), so the app can query them directly:
+
+| Model | One row per |
+|---|---|
+| `agg_version_summary` | agent version: pass rates, mean scores, p50/p95 latency, tokens |
+| `agg_version_category` | agent version and test category, same metrics |
+| `agg_version_case_diff` | agent version and test case: newly failing, newly passing, still passing or still failing against the predecessor |
+| `agg_version_diff` | agent version and category against the predecessor: pass-rate change, cases newly failing and newly passing |
+
+A version's predecessor is the version that first ran just before it. The case diff
+compares each version's latest suite run with its predecessor's, so rerunning a version
+does not count a case twice; a dbt unit test in `pipeline/models/serving/schema.yml`
+checks that logic.
+
 Which categories did one agent version regress on, compared with another:
 
 ```sql
