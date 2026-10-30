@@ -200,10 +200,37 @@ bun run agent                 # the first 5 test cases
 bun run agent v1-006 v1-012   # these cases
 ```
 
-It prints each summary with its latency and token counts. `summarise` never throws:
+It prints each summary with its latency, token counts and [scores](#scorers). `summarise` never throws:
 a failed model call returns a `model` error, and a reply that does not validate is
 retried once with the problem pointed out, then returns a `parse` error with the last
 reply kept. The prompt is `SYSTEM_PROMPT`, versioned by `PROMPT_VERSION`.
+
+## Scorers
+
+`harness/src/scorers.ts` holds the deterministic scorers: pure functions of a run's
+summary and the case's ground truth, each giving one score for the trace event.
+`scoreRun` returns them all. A run with no summary fails every one.
+
+| Scorer | Value | Passes when |
+|---|---|---|
+| `schema_valid` | 1 if there is a summary | there is one |
+| `medication_recall` | share of the patient's medications listed | none missed |
+| `medication_precision` | share of listed medications on record | none extra (a stopped drug counts as extra) |
+| `allergy_recall` | share of the patient's allergies listed | none missed |
+| `dose_match` | share of listed medications with a recorded dose or timing that have both right | all right |
+| `hallucinations` | share of listed medications and allergies on record | nothing made up |
+
+Names match on their key words, ignoring packaging (Oral Tablet, ER, hydrochloride)
+and case, but any strength the summary gives must be on record: "Lisinopril", "lisinopril
+10mg" and "Seasonique" all match their prescriptions; "lisinopril 20 mg" does not
+match a 10 MG one. A dose is right as a unit count ("1 tablet") or as the same amount by
+strength ("10 MG" for one 10 MG tablet). Frequencies are compared as times per day, so
+"BID" and "twice daily" agree. "Allergic disposition" is not expected in a summary,
+since it names no substance. Conditions are left to the LLM judge (KAN-21): "HTN" and
+"pre-DM" defeat string matching.
+
+`harness/src/scorers.dataset.test.ts` checks the scorers on all 100 cases: restating
+the ground truth scores full marks, and dropping any one item is caught.
 
 ## Trace events
 
