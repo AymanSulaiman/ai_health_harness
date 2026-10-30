@@ -34,6 +34,8 @@ models:
         description: Share of judged runs that passed every judge score.
       - name: error_rate
         description: Share of runs that failed with an error.
+      - name: hallucination_rate
+        description: Share of scored runs listing at least one medication or allergy not on record.
       - name: p50_latency_ms
         description: Median agent latency.
       - name: p95_latency_ms

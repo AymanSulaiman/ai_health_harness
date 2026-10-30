@@ -9,3 +9,4 @@ datasets/
 pipeline/target
 pipeline/logs
 pipeline/dbt_packages
+.gstack/

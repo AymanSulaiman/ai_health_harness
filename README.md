@@ -282,8 +282,16 @@ Pages are server components that read `serving.*` through the DuckDB Node API
 (`dashboard/lib/db.ts`); nothing in the browser touches the database. Each query opens a
 read-only connection and closes it, because DuckDB will not let `make transform` write
 while another process holds the file open, so the app can stay running through an eval.
-Set `WAREHOUSE_PATH` to read a database other than `data/warehouse.duckdb`. The page shows
-each agent version with its pass rates and latency.
+Set `WAREHOUSE_PATH` to read a database other than `data/warehouse.duckdb`.
+
+The overview answers "is the latest version better or worse?" at the top: a verdict
+against the previous version (worse if allergy recall fell or the pass rate dropped 5
+points or more; better if it rose 5 or more; otherwise about the same, since one
+version's own runs differ by that much), then tiles for pass rate, allergy recall, runs
+with anything made up and p95 latency, each with its change. Below are the pass rate
+across versions, the pass rate per test category for a chosen version (ticks and "was"
+labels show the previous version), and every version in a table; pick one there to
+chart its categories. Charts are SVG rendered on the server, with hover tooltips.
 
 ## Trace events
 

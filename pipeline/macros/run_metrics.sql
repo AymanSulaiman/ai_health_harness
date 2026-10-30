@@ -7,6 +7,7 @@
     avg(f.deterministic_passed::int) as deterministic_pass_rate,
     avg(f.judge_passed::int) as judge_pass_rate,
     avg((f.error_stage is not null)::int) as error_rate,
+    avg((f.hallucinations < 1)::int) as hallucination_rate,
     {% for scorer in ['medication_recall', 'medication_precision', 'allergy_recall', 'dose_match',
                       'hallucinations', 'judge_faithfulness', 'judge_usefulness', 'judge_omissions'] %}
     avg(f.{{ scorer }}) as mean_{{ scorer }},
