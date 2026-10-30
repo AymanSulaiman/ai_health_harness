@@ -4,6 +4,8 @@
 import { Summary, type RunError, type TraceEvent } from "shared-types";
 import { ModelError, type Message, type ModelClient } from "./model";
 
+// ponytail: bumped by hand; KAN-17 decides how agent and prompt versions are tracked
+export const AGENT_VERSION = "1";
 export const PROMPT_VERSION = "1";
 
 export const SYSTEM_PROMPT = `You are a clinical documentation assistant. Read the clinical note and summarise the patient's current state for a clinician.

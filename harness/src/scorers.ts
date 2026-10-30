@@ -153,6 +153,12 @@ const NO_SUMMARY = "no summary to score";
 const NOT_A_SUBSTANCE = new Set(["609328004"]); // Allergic disposition (finding)
 
 const scorable = (truth: GroundTruth): Allergy[] => truth.allergies.filter((a) => !NOT_A_SUBSTANCE.has(a.snomed));
+// The agent sometimes writes the whole med-list line as the name ("lisinopril 10 MG Oral
+// Tablet, 2 tablets, QD"); the dose after the comma would fail the strength check.
+const medNames = (summary: Summary) => summary.medications.map((m) => m.name.split(", ")[0]!);
+// "NKDA", "None", "Unknown" written as an allergy entry mean no allergy, not a made-up one.
+const NO_ALLERGY = /^(nkda|nka|none|none known|no known (drug )?allergies|unknown|unspecified|n\/a)$/i;
+const listedAllergies = (summary: Summary) => summary.allergies.filter((a) => !NO_ALLERGY.test(a.substance.trim()));
 const plain = (s: string) => s.replace(/\s*\([^)]*\)$/, "");
 const fraction = (n: number, of: number) => (of === 0 ? 1 : n / of);
 const list = (names: string[]) => names.join("; ");
@@ -169,7 +175,7 @@ export function schemaValid(summary: Summary | null): Score {
 /** Share of the patient's medications the summary lists. */
 export function medicationRecall(summary: Summary | null, truth: GroundTruth): Score {
   if (!summary) return failed("medication_recall");
-  const pairs = match(summary.medications.map((m) => m.name), truth.medications.map((m) => m.name));
+  const pairs = match(medNames(summary), truth.medications.map((m) => m.name));
   const found = new Set(pairs.map(([, j]) => j));
   const missed = truth.medications.filter((_, j) => !found.has(j)).map((m) => m.name);
   const value = fraction(found.size, truth.medications.length);
@@ -179,7 +185,7 @@ export function medicationRecall(summary: Summary | null, truth: GroundTruth): S
 /** Share of the summary's medications the patient actually takes. A stopped drug counts against it. */
 export function medicationPrecision(summary: Summary | null, truth: GroundTruth): Score {
   if (!summary) return failed("medication_precision");
-  const pairs = match(summary.medications.map((m) => m.name), truth.medications.map((m) => m.name));
+  const pairs = match(medNames(summary), truth.medications.map((m) => m.name));
   const matched = new Set(pairs.map(([i]) => i));
   const extra = summary.medications.filter((_, i) => !matched.has(i)).map((m) => m.name);
   const value = fraction(matched.size, summary.medications.length);
@@ -190,7 +196,7 @@ export function medicationPrecision(summary: Summary | null, truth: GroundTruth)
 export function allergyRecall(summary: Summary | null, truth: GroundTruth): Score {
   if (!summary) return failed("allergy_recall");
   const allergies = scorable(truth);
-  const pairs = match(summary.allergies.map((a) => a.substance), allergies.map((a) => a.substance));
+  const pairs = match(listedAllergies(summary).map((a) => a.substance), allergies.map((a) => a.substance));
   const found = new Set(pairs.map(([, j]) => j));
   const missed = allergies.filter((_, j) => !found.has(j)).map((a) => plain(a.substance));
   const value = fraction(found.size, allergies.length);
@@ -200,7 +206,7 @@ export function allergyRecall(summary: Summary | null, truth: GroundTruth): Scor
 /** For each listed medication with a recorded dose or timing: are both right? */
 export function doseMatch(summary: Summary | null, truth: GroundTruth): Score {
   if (!summary) return failed("dose_match");
-  const pairs = match(summary.medications.map((m) => m.name), truth.medications.map((m) => m.name));
+  const pairs = match(medNames(summary), truth.medications.map((m) => m.name));
   const wrong: string[] = [];
   let checked = 0;
   for (const [i, j] of pairs) {
@@ -227,15 +233,16 @@ export function doseMatch(summary: Summary | null, truth: GroundTruth): Score {
  */
 export function hallucinations(summary: Summary | null, truth: GroundTruth): Score {
   if (!summary) return failed("hallucinations");
-  const medPairs = match(summary.medications.map((m) => m.name), truth.medications.map((m) => m.name));
-  const allergyPairs = match(summary.allergies.map((a) => a.substance), truth.allergies.map((a) => a.substance));
+  const medPairs = match(medNames(summary), truth.medications.map((m) => m.name));
+  const listed = listedAllergies(summary);
+  const allergyPairs = match(listed.map((a) => a.substance), truth.allergies.map((a) => a.substance));
   const medHit = new Set(medPairs.map(([i]) => i));
   const allergyHit = new Set(allergyPairs.map(([i]) => i));
   const made = [
     ...summary.medications.filter((_, i) => !medHit.has(i)).map((m) => `medication ${m.name}`),
-    ...summary.allergies.filter((_, i) => !allergyHit.has(i)).map((a) => `allergy ${a.substance}`),
+    ...listed.filter((_, i) => !allergyHit.has(i)).map((a) => `allergy ${a.substance}`),
   ];
-  const total = summary.medications.length + summary.allergies.length;
+  const total = summary.medications.length + listed.length;
   const value = fraction(total - made.length, total);
   return score("hallucinations", value, made.length === 0, made.length ? `${made.length} not on record: ${list(made)}` : null);
 }

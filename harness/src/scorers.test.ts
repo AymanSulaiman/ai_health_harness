@@ -128,6 +128,22 @@ describe("scorers", () => {
     expect(hallucinations(only({ allergies: [...PERFECT.allergies, a("allergic disposition")] }), TRUTH).passed).toBe(true);
   });
 
+  test("a whole med-list line as the name still matches, and only the name is matched", () => {
+    const line = only({ medications: [m("lisinopril 10 MG Oral Tablet, 1 tablet, QD", "1 tablet", "QD"), ...PERFECT.medications.slice(1)] });
+    for (const s of scoreRun(line, TRUTH)) expect(s).toMatchObject({ passed: true });
+    const wrong = only({ medications: [m("lisinopril 20 MG Oral Tablet, 1 tablet, QD"), ...PERFECT.medications.slice(1)] });
+    expect(medicationRecall(wrong, TRUTH).passed).toBe(false);
+  });
+
+  test("NKDA, None or Unknown listed as an allergy is not a made-up allergy", () => {
+    for (const placeholder of ["NKDA", "None", "Unknown", "unspecified", "No known allergies"]) {
+      const summary = only({ allergies: [...PERFECT.allergies, a(placeholder)] });
+      expect(hallucinations(summary, TRUTH)).toMatchObject({ value: 1, passed: true });
+      expect(allergyRecall(summary, TRUTH).passed).toBe(true);
+    }
+    expect(hallucinations(only({ allergies: [...PERFECT.allergies, a("Unknown mold")] }), TRUTH).passed).toBe(false);
+  });
+
   test("no allergies on record and none listed passes", () => {
     const truth = { ...TRUTH, allergies: [allergy("Allergic disposition (finding)", "609328004")] };
     expect(allergyRecall(only({ allergies: [] }), truth)).toMatchObject({ value: 1, passed: true });

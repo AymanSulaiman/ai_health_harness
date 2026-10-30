@@ -19,6 +19,7 @@
     "harness": {
       "name": "harness",
       "dependencies": {
+        "agent": "workspace:*",
         "shared-types": "workspace:*",
       },
       "devDependencies": {

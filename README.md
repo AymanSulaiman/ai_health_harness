@@ -200,7 +200,8 @@ bun run agent                 # the first 5 test cases
 bun run agent v1-006 v1-012   # these cases
 ```
 
-It prints each summary with its latency, token counts and [scores](#scorers). `summarise` never throws:
+It prints each summary with its latency and token counts; to score runs, use the
+[suite runner](#suite-runner). `summarise` never throws:
 a failed model call returns a `model` error, and a reply that does not validate is
 retried once with the problem pointed out, then returns a `parse` error with the last
 reply kept. The prompt is `SYSTEM_PROMPT`, versioned by `PROMPT_VERSION`.
@@ -225,12 +226,28 @@ and case, but any strength the summary gives must be on record: "Lisinopril", "l
 10mg" and "Seasonique" all match their prescriptions; "lisinopril 20 mg" does not
 match a 10 MG one. A dose is right as a unit count ("1 tablet") or as the same amount by
 strength ("10 MG" for one 10 MG tablet). Frequencies are compared as times per day, so
-"BID" and "twice daily" agree. "Allergic disposition" is not expected in a summary,
+"BID" and "twice daily" agree. Only the part of a name before the first comma is matched,
+since the agent sometimes copies the whole med-list line ("..., 2 tablets, QD") into it,
+and "NKDA", "None" or "Unknown" written as an allergy is ignored. "Allergic disposition" is not expected in a summary,
 since it names no substance. Conditions are left to the LLM judge (KAN-21): "HTN" and
 "pre-DM" defeat string matching.
 
 `harness/src/scorers.dataset.test.ts` checks the scorers on all 100 cases: restating
 the ground truth scores full marks, and dropping any one item is caught.
+
+## Suite runner
+
+```
+bun run eval                       # every case in datasets/notes_v1.jsonl, as a new suite run
+bun run eval --suite <id>          # resume a suite run: cases that already have an event are skipped
+bun run eval --concurrency 2 --limit 10
+```
+
+`harness/src/suite.ts` runs each case through the agent (4 at a time by default), scores
+it and writes its trace event to `data/traces/<suite_run_id>.jsonl`, printing a line per
+case and pass rates per scorer at the end. Kill it at any point and rerun with the
+`--suite` id it printed to finish the rest. Any event counts as done, a failed run
+included, so each suite run has one event per case.
 
 ## Trace events
 
