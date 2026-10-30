@@ -35,6 +35,12 @@ test("sends an OpenAI-style request and returns text, tokens and latency", async
   expect(req.headers.get("authorization")).toBeNull();
 });
 
+test("reasoning effort is sent only when asked for", async () => {
+  reply = ok("hello");
+  await modelClient("local/qwen3:8b", config).chat([{ role: "user", content: "hi" }], { reasoning_effort: "none" });
+  expect(seen.at(-1)!.body).toMatchObject({ reasoning_effort: "none" });
+});
+
 test("a schema goes into the system prompt, merged with any system prompt already there", async () => {
   reply = ok('{"meds":[]}');
   const schema = z.strictObject({ meds: z.array(z.string()) });

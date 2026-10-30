@@ -13,6 +13,8 @@ export type Message = { role: "system" | "user" | "assistant"; content: string }
 export type ChatOptions = {
   schema?: z.ZodType; // ask for a JSON reply of this shape; the caller still validates it
   temperature?: number;
+  // OpenAI's reasoning_effort; Ollama maps it to thinking. Left out, the model decides.
+  reasoning_effort?: "none" | "low" | "medium" | "high";
 };
 
 // Ollama Cloud ignores response_format and format (checked 2026-10-30: free text back from
@@ -68,6 +70,7 @@ export function modelClient(spec: string, config: ModelConfig = models): ModelCl
       model,
       messages: options.schema ? withSchema(messages, options.schema) : messages,
       temperature: options.temperature ?? 0,
+      ...(options.reasoning_effort && { reasoning_effort: options.reasoning_effort }),
     };
     const started = performance.now();
     let res: Response;

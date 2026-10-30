@@ -152,7 +152,7 @@ const NO_SUMMARY = "no summary to score";
 // ponytail: one code; add others here if Synthea gains more non-substance entries
 const NOT_A_SUBSTANCE = new Set(["609328004"]); // Allergic disposition (finding)
 
-const scorable = (truth: GroundTruth): Allergy[] => truth.allergies.filter((a) => !NOT_A_SUBSTANCE.has(a.snomed));
+export const scorable = (truth: GroundTruth): Allergy[] => truth.allergies.filter((a) => !NOT_A_SUBSTANCE.has(a.snomed));
 // The agent sometimes writes the whole med-list line as the name ("lisinopril 10 MG Oral
 // Tablet, 2 tablets, QD"); the dose after the comma would fail the strength check.
 const medNames = (summary: Summary) => summary.medications.map((m) => m.name.split(", ")[0]!);

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "shared-types": "workspace:*",
-    "agent": "workspace:*"
+    "agent": "workspace:*",
+    "zod": "^4.6.7"
   }
 }

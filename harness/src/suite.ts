@@ -2,12 +2,14 @@
 //   bun run eval                          a new suite run over datasets/notes_v1.jsonl
 //   bun run eval --suite <id>             resume it: cases with an event already are skipped
 //   bun run eval --concurrency 2 --limit 10
+//   bun run eval --skip-judge             deterministic scorers only
 import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { AGENT_VERSION, modelClient, PROMPT_VERSION, summarise, type ModelClient } from "agent";
 import models from "../../models.json" with { type: "json" };
 import { TraceEvent } from "shared-types";
 import type { GroundTruth } from "./ground-truth";
+import { JUDGE_PROMPT_VERSION, judge } from "./judge";
 import { scoreRun } from "./scorers";
 import { emit, TRACES_DIR } from "./traces";
 
@@ -23,16 +25,18 @@ export function readEvents(suiteRunId: string, dir = TRACES_DIR): TraceEvent[] {
 
 const passed = (e: TraceEvent) => e.error === null && e.scores.every((s) => s.passed);
 
-/** One case: run, score, emit. Never throws for a bad run; only an invalid event does. */
-async function runCase(c: Case, client: ModelClient, suiteRunId: string, dir: string): Promise<TraceEvent> {
+/** One case: run, score, judge, emit. Never throws for a bad run; only an invalid event does. */
+async function runCase(c: Case, client: ModelClient, judgeClient: ModelClient | null, suiteRunId: string, dir: string): Promise<TraceEvent> {
   const run = await summarise(c.note, client);
-  let scores: TraceEvent["scores"] = [];
+  const scores: TraceEvent["scores"] = [];
   let error = run.error;
-  if (!error) {
+  if (!error && run.parsed_output) {
     try {
-      scores = scoreRun(run.parsed_output, c.ground_truth);
+      scores.push(...scoreRun(run.parsed_output, c.ground_truth));
+      if (judgeClient) scores.push(...(await judge(c.note, c.ground_truth, run.parsed_output, judgeClient)));
     } catch (e) {
-      error = { stage: "score", message: String(e) };
+      // the deterministic scores are kept when only the judge failed
+      error = { stage: "score", message: e instanceof Error ? e.message : String(e) };
     }
   }
   const event: TraceEvent = {
@@ -43,8 +47,8 @@ async function runCase(c: Case, client: ModelClient, suiteRunId: string, dir: st
     agent_version: AGENT_VERSION,
     agent_model: client.spec,
     prompt_version: PROMPT_VERSION,
-    judge_model: null, // KAN-21
-    judge_prompt_version: null,
+    judge_model: judgeClient?.spec ?? null,
+    judge_prompt_version: judgeClient ? JUDGE_PROMPT_VERSION : null,
     ...run,
     scores,
     error,
@@ -61,12 +65,13 @@ async function runCase(c: Case, client: ModelClient, suiteRunId: string, dir: st
 export async function runSuite(opts: {
   cases: Case[];
   client: ModelClient;
+  judge?: ModelClient | null; // null or left out: no LLM judge
   suiteRunId: string;
   concurrency: number;
   dir?: string;
   log?: (line: string) => void;
 }): Promise<TraceEvent[]> {
-  const { cases, client, suiteRunId, concurrency, dir = TRACES_DIR, log = console.log } = opts;
+  const { cases, client, judge: judgeClient = null, suiteRunId, concurrency, dir = TRACES_DIR, log = console.log } = opts;
   // ponytail: any event counts as done, errors too, so the raw layer keeps one row per case
   const done = new Set(readEvents(suiteRunId, dir).map((e) => e.test_case_id));
   const todo = cases.filter((c) => !done.has(c.case_id));
@@ -77,7 +82,7 @@ export async function runSuite(opts: {
   const worker = async () => {
     while (next < todo.length) {
       const c = todo[next++]!;
-      const e = await runCase(c, client, suiteRunId, dir);
+      const e = await runCase(c, client, judgeClient, suiteRunId, dir);
       const failed = e.error ? [`error (${e.error.stage}): ${e.error.message}`] : e.scores.filter((s) => !s.passed).map((s) => s.scorer);
       log(`[${++finished}/${cases.length}] ${c.case_id} ${passed(e) ? "PASS" : "FAIL"} ${(e.latency_ms / 1000).toFixed(1)}s ${failed.join(", ")}`.trimEnd());
     }
@@ -107,6 +112,7 @@ if (import.meta.main) {
       suite: { type: "string" },
       concurrency: { type: "string", default: "4" },
       limit: { type: "string" },
+      "skip-judge": { type: "boolean", default: false },
     },
   });
   const path = `${import.meta.dir}/../../datasets/notes_${values.dataset}.jsonl`;
@@ -118,6 +124,8 @@ if (import.meta.main) {
   const cases = values.limit ? all.slice(0, Number(values.limit)) : all;
   const suiteRunId = values.suite ?? new Date().toISOString().replace(/[:.]/g, "-");
 
-  const events = await runSuite({ cases, client: modelClient(models.agent), suiteRunId, concurrency: Number(values.concurrency) });
+  const events = await runSuite({ cases, client: modelClient(models.agent),
+    judge: values["skip-judge"] ? null : modelClient(models.judge),
+    suiteRunId, concurrency: Number(values.concurrency) });
   console.log(`\n${report(events)}\ntraces: data/traces/${suiteRunId}.jsonl`);
 }

@@ -60,3 +60,23 @@ test("a rerun with the same suite id runs only the cases without an event", asyn
   expect(events).toHaveLength(6);
   expect(new Set(readEvents("s1", dir).map((e) => e.test_case_id)).size).toBe(6);
 });
+
+test("judge scores sit beside the deterministic ones; a failing judge keeps those and records the error", async () => {
+  const dir = mkdtempSync(`${tmpdir()}/suite-`);
+  const grade = { score: 5, rationale: "fine" };
+  let calls = 0;
+  const judgeClient: ModelClient = {
+    spec: "fake/judge",
+    async chat() {
+      // the first case's judge replies fine; every later call is unusable
+      const text = ++calls === 1 ? JSON.stringify({ faithfulness: grade, usefulness: grade, omissions: grade }) : "nope";
+      return { text, input_tokens: 1, output_tokens: 1, latency_ms: 1 };
+    },
+  };
+  const [ok, broken] = await runSuite({ cases: cases.slice(0, 2), client: fake().client, judge: judgeClient, suiteRunId: "s1", concurrency: 1, dir, log: () => {} });
+  expect(ok!).toMatchObject({ judge_model: "fake/judge", judge_prompt_version: "1", error: null });
+  expect(ok!.scores.map((s) => s.scorer)).toContain("judge_omissions");
+  expect(ok!.scores).toHaveLength(9);
+  expect(broken!.error).toMatchObject({ stage: "score" });
+  expect(broken!.scores).toHaveLength(6);
+});

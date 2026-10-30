@@ -235,16 +235,35 @@ since it names no substance. Conditions are left to the LLM judge (KAN-21): "HTN
 `harness/src/scorers.dataset.test.ts` checks the scorers on all 100 cases: restating
 the ground truth scores full marks, and dropping any one item is caught.
 
+### LLM judge
+
+`harness/src/judge.ts` asks the judge model (`judge` in `models.json`) to grade each
+summary from 1 to 5, with a rationale, on:
+
+| Scorer | Grades |
+|---|---|
+| `judge_faithfulness` | everything in the summary is supported by the note; no stopped drug, stale dose or invention |
+| `judge_usefulness` | a clinician could act on it at a glance |
+| `judge_omissions` | nothing clinically important is missing, conditions included (HTN counts as hypertension) |
+
+It sees the note, the patient's record and the summary. A grade of 4 or 5 passes; the
+value is the grade scaled to 0–1, and the detail holds the grade and rationale. The
+judge model and `JUDGE_PROMPT_VERSION` are written into every trace event, so a change to
+the judge can be told apart from a change to the agent: bump the version whenever the
+prompt or the rubric changes. Reasoning is turned off for the judge: `kimi-k2.6` reasons
+for over a minute on this prompt, and Ollama Cloud drops a request after 60 seconds.
+
 ## Suite runner
 
 ```
 bun run eval                       # every case in datasets/notes_v1.jsonl, as a new suite run
 bun run eval --suite <id>          # resume a suite run: cases that already have an event are skipped
 bun run eval --concurrency 2 --limit 10
+bun run eval --skip-judge          # deterministic scorers only: faster, half the model calls
 ```
 
 `harness/src/suite.ts` runs each case through the agent (4 at a time by default), scores
-it and writes its trace event to `data/traces/<suite_run_id>.jsonl`, printing a line per
+it, has the judge grade it, and writes its trace event to `data/traces/<suite_run_id>.jsonl`, printing a line per
 case and pass rates per scorer at the end. Kill it at any point and rerun with the
 `--suite` id it printed to finish the rest. Any event counts as done, a failed run
 included, so each suite run has one event per case.
