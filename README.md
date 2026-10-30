@@ -153,3 +153,15 @@ The ground truth says 1 tablet, so a summary that copies the med list gets the d
 To read a case: `sed -n 6p datasets/notes_v1.jsonl | jq -r .note`
 
 A local LLM pass to make the notes read more naturally is planned as dataset v2 (KAN-35).
+
+## Trace events
+
+Each agent run on one test case produces one trace event: which agent, model and
+prompt versions ran, the raw and parsed output, token counts, latency, tool calls,
+a score per scorer, and any error. It is the contract between the TypeScript harness,
+which writes events, and the Python pipeline, which reads them.
+
+The zod schema in `shared-types/src/index.ts` is the source of truth; TypeScript code
+imports `TraceEvent` from `shared-types`. `schemas/trace_event.schema.json` is generated
+from it for the Python side: after changing the zod schema, run `make schema`. A
+test fails while the two differ.
