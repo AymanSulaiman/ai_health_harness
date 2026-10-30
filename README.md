@@ -243,3 +243,9 @@ The zod schema in `shared-types/src/index.ts` is the source of truth; TypeScript
 imports `TraceEvent` from `shared-types`. `schemas/trace_event.schema.json` is generated
 from it for the Python side: after changing the zod schema, run `make schema`. A
 test fails while the two differ.
+
+`emit` in `harness/src/traces.ts` validates each event and appends it as one line to
+`data/traces/<suite_run_id>.jsonl`; an invalid event throws and writes nothing. These
+files are the raw layer: lines are only ever appended, and DuckDB reads them directly,
+`SELECT * FROM read_json('data/traces/*.jsonl')`. They are files rather than a table
+in `warehouse.duckdb` because DuckDB lets only one process write a database file at a time.
