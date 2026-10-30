@@ -285,3 +285,26 @@ test fails while the two differ.
 files are the raw layer: lines are only ever appended, and DuckDB reads them directly,
 `SELECT * FROM read_json('data/traces/*.jsonl')`. They are files rather than a table
 in `warehouse.duckdb` because DuckDB lets only one process write a database file at a time.
+
+## Pipeline
+
+`pipeline/` is a dbt project (dbt-duckdb) over `data/warehouse.duckdb`. Run it from the
+repository root:
+
+```
+make transform    # source freshness, then dbt build: models and their tests
+```
+
+Sources read files in place: `raw.trace_events` is `data/traces/*.jsonl`, `raw.test_cases`
+is `datasets/notes_*.jsonl`, and `raw_fhir.*` are the Synthea tables. The staging models
+are tables in the `staging` schema:
+
+| Model | One row per |
+|---|---|
+| `stg_trace_events` | agent run: versions, tokens, latency, error, outputs |
+| `stg_trace_scores` | run and scorer (`score_id` is `<run_id>:<scorer>`) |
+| `stg_test_cases` | test case: categories and item counts, note, ground truth |
+
+Keys are tested unique and not null, every run's test case and every score's run must
+exist, and freshness warns when no run was traced in 7 days. The trace files must exist
+first: run `bun run eval` at least once.

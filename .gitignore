@@ -6,3 +6,6 @@ __pycache__
 .env
 node_modules
 datasets/
+pipeline/target
+pipeline/logs
+pipeline/dbt_packages

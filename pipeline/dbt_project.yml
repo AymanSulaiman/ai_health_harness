@@ -1,0 +1,12 @@
+name: ai_health_harness
+version: "1.0.0"
+profile: ai_health_harness
+model-paths: ["models"]
+
+models:
+  ai_health_harness:
+    staging:
+      # ponytail: tables, not views. The sources read files by paths relative to the repo
+      # root, so a view would break for anything querying from another directory (the dashboard).
+      +materialized: table
+      +schema: staging

@@ -1,0 +1,41 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Files written by the harness and the data pipeline, read in place.
+    tables:
+      - name: trace_events
+        description: One line per agent run on one test case (schemas/trace_event.schema.json). Append-only.
+        # Types are given, not inferred: a field that is null on every line (error, when no
+        # run failed) would otherwise be read as JSON. Keep in step with shared-types/src/index.ts.
+        meta:
+          external_location: >-
+            read_json('data/traces/*.jsonl', columns = struct_pack(
+              run_id := 'VARCHAR', suite_run_id := 'VARCHAR', test_case_id := 'VARCHAR', dataset_version := 'VARCHAR',
+              agent_version := 'VARCHAR', agent_model := 'VARCHAR', prompt_version := 'VARCHAR',
+              judge_model := 'VARCHAR', judge_prompt_version := 'VARCHAR',
+              tool_calls := 'JSON[]', input_tokens := 'INTEGER', output_tokens := 'INTEGER', latency_ms := 'INTEGER',
+              raw_output := 'VARCHAR', parsed_output := 'JSON',
+              scores := 'STRUCT(scorer VARCHAR, value DOUBLE, passed BOOLEAN, detail VARCHAR)[]',
+              error := 'STRUCT(stage VARCHAR, message VARCHAR)',
+              created_at := 'TIMESTAMPTZ'
+            ))
+        config:
+          loaded_at_field: created_at
+          freshness:
+            warn_after: { count: 7, period: day }
+      - name: test_cases
+        description: The frozen test-case datasets, datasets/notes_<version>.jsonl.
+        meta:
+          external_location: "read_json('datasets/notes_*.jsonl', union_by_name = true)"
+
+  - name: raw_fhir
+    description: Synthea FHIR R4 resources, one table per type, loaded by ai-health-harness generate.
+    schema: raw_fhir
+    tables:
+      - name: patient
+      - name: encounter
+      - name: condition
+      - name: medication_request
+      - name: allergy_intolerance
+      - name: observation

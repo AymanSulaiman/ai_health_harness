@@ -7,6 +7,7 @@ them into DuckDB, as the pipeline will. Needs bun on the PATH
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -88,3 +89,11 @@ def test_duckdb_reads_the_events(jsonl):
         ]
         text = con.sql("SELECT raw_output FROM raw_trace WHERE run_id = 'run-2'").fetchone()
         assert text is not None and "ünïcode" in text[0] and "\n" in text[0]
+
+
+def test_dbt_source_columns_match_the_contract():
+    # pipeline/models/sources.yml types every trace column by hand; a field added to the
+    # contract but not there would be silently dropped by read_json.
+    sources = (ROOT / "pipeline" / "models" / "sources.yml").read_text()
+    typed = re.findall(r"(\w+) := '", sources)
+    assert sorted(typed) == sorted(SCHEMA["properties"])

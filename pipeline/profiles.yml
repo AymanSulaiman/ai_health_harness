@@ -1,0 +1,7 @@
+# Run from the repository root (make transform): paths here and in sources are relative to it.
+ai_health_harness:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: data/warehouse.duckdb
