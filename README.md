@@ -154,6 +154,41 @@ To read a case: `sed -n 6p datasets/notes_v1.jsonl | jq -r .note`
 
 A local LLM pass to make the notes read more naturally is planned as dataset v2 (KAN-35).
 
+## Models
+
+The agent and the judge call models through one client, `modelClient` in
+`agent/src/model.ts`. Ollama and most hosted providers speak the OpenAI
+chat-completions API, so a provider is only a base URL in `models.json`, plus the
+env var holding its key for hosted ones:
+
+```json
+"ollama-cloud": { "base_url": "https://ollama.com/v1", "api_key_env": "OLLAMA_API_KEY" },
+"ollama": { "base_url": "http://localhost:11434/v1" }
+```
+
+A model is named `<provider>/<model>`, e.g. `ollama-cloud/gpt-oss:20b` or
+`ollama/qwen3:8b`, so switching provider or model is a config change. Both the agent
+and the judge run on [Ollama Cloud](https://ollama.com/cloud) by default, on models from
+different families so the judge is not grading its own kind:
+
+```json
+"agent": "ollama-cloud/gpt-oss:20b",
+"judge": "ollama-cloud/kimi-k2.6"
+```
+
+Put your key from ollama.com/settings/keys in a `.env` file at the repository root
+(gitignored; bun loads it):
+
+```
+OLLAMA_API_KEY=...
+``` Every call returns the text, input and output token counts
+(null if the provider leaves them out) and latency. Passing a zod schema puts it in
+the system prompt with an instruction to reply in JSON only: Ollama Cloud ignores
+the APIs' own structured-output options, so the caller still validates the reply. Failures throw `ModelError`.
+
+`agent/src/model.live.test.ts` makes one small call to each of the agent and judge
+models, and skips when their key is not set (as in CI).
+
 ## Trace events
 
 Each agent run on one test case produces one trace event: which agent, model and

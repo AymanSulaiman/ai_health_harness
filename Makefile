@@ -16,6 +16,7 @@ test:
 	bun test
 
 typecheck:
+	bun run --cwd agent typecheck
 	bun run --cwd harness typecheck
 	bun run --cwd shared-types typecheck
 

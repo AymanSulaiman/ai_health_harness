@@ -1,0 +1,7 @@
+{
+  "agent": "ollama-cloud/gpt-oss:20b",
+  "judge": "ollama-cloud/kimi-k2.6",
+  "providers": {
+    "ollama-cloud": { "base_url": "https://ollama.com/v1", "api_key_env": "OLLAMA_API_KEY" }
+  }
+}

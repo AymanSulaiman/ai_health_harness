@@ -1,5 +1,5 @@
 {
   "name": "ai-health-harness",
   "private": true,
-  "workspaces": ["harness", "shared-types"]
+  "workspaces": ["agent", "harness", "shared-types"]
 }
