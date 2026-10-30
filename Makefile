@@ -1,5 +1,4 @@
-# ponytail: dev target lands with KAN-27
-.PHONY: all install generate schema eval transform docs test typecheck check
+.PHONY: all install generate schema eval transform docs dev test typecheck check
 
 # everything from a fresh clone: dependencies, data (only if not built yet), eval and gates
 all: install datasets/notes_v1.jsonl eval
@@ -33,6 +32,10 @@ docs:
 	$(DBT) docs generate $(DBT_ARGS)
 	$(DBT) docs serve $(DBT_ARGS)
 
+# the dashboard on http://localhost:3000
+dev:
+	bun run --cwd dashboard dev
+
 test:
 	uv run --project data_processing pytest
 	bun test
@@ -41,5 +44,6 @@ typecheck:
 	bun run --cwd agent typecheck
 	bun run --cwd harness typecheck
 	bun run --cwd shared-types typecheck
+	bun run --cwd dashboard typecheck
 
 check: test typecheck

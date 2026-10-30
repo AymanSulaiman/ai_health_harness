@@ -270,6 +270,21 @@ case and pass rates per scorer at the end. Kill it at any point and rerun with t
 `--suite` id it printed to finish the rest. Any event counts as done, a failed run
 included, so each suite run has one event per case.
 
+## Dashboard
+
+`dashboard/` is a Next.js app (App Router, TypeScript, Tailwind) over the serving tables.
+
+```
+make dev    # http://localhost:3000
+```
+
+Pages are server components that read `serving.*` through the DuckDB Node API
+(`dashboard/lib/db.ts`); nothing in the browser touches the database. Each query opens a
+read-only connection and closes it, because DuckDB will not let `make transform` write
+while another process holds the file open, so the app can stay running through an eval.
+Set `WAREHOUSE_PATH` to read a database other than `data/warehouse.duckdb`. The page shows
+each agent version with its pass rates and latency.
+
 ## Trace events
 
 Each agent run on one test case produces one trace event: which agent, model and

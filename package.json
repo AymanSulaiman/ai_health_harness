@@ -4,10 +4,12 @@
   "workspaces": [
     "agent",
     "harness",
-    "shared-types"
+    "shared-types",
+    "dashboard"
   ],
   "scripts": {
     "agent": "bun agent/src/cli.ts",
-    "eval": "bun harness/src/suite.ts"
+    "eval": "bun harness/src/suite.ts",
+    "dashboard": "bun run --cwd dashboard dev"
   }
 }
