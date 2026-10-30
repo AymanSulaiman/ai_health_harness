@@ -7,8 +7,12 @@ seed, population size and Synthea version are pinned in `data_processing/src/ai_
 It then builds the ground truth: one record per living patient in
 `data/ground_truth.jsonl`, listing what a correct summary must contain (see below).
 
-Needs [uv](https://docs.astral.sh/uv/) and Docker (Synthea runs in a Java container).
-Run from the repository root:
+The repo has two toolchains. The data side (`data_processing/`, uv) is Python because
+DuckDB and, later, dbt live there. The agent and harness (`harness/`, bun) are TypeScript.
+
+Needs [uv](https://docs.astral.sh/uv/), [bun](https://bun.sh) and Docker (Synthea runs
+in a Java container). `make install` sets up both sides; `make check` runs the tests
+and the typecheck. Run from the repository root:
 
 ```
 uv run --project data_processing ai-health-harness                # every step, in order
