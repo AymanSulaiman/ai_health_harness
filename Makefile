@@ -1,5 +1,11 @@
 # ponytail: dev target lands with KAN-27
-.PHONY: install generate schema transform docs test typecheck check
+.PHONY: all install generate schema eval transform docs test typecheck check
+
+# everything from a fresh clone: dependencies, data (only if not built yet), eval and gates
+all: install datasets/notes_v1.jsonl eval
+
+datasets/notes_v1.jsonl:
+	$(MAKE) generate
 
 install:
 	uv sync --project data_processing
@@ -10,6 +16,11 @@ generate:
 
 schema:
 	bun run --cwd shared-types schema
+
+# a suite run, then the pipeline and its regression gates: make eval ARGS="--limit 10"
+eval:
+	bun run eval $(ARGS)
+	$(MAKE) transform
 
 DBT = uv run --project data_processing dbt --no-version-check
 DBT_ARGS = --project-dir pipeline --profiles-dir pipeline

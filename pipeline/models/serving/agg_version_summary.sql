@@ -1,6 +1,7 @@
 -- One row per agent version: how it did over all its runs.
 select
     v.agent_key,
+    v.previous_agent_key,
     v.agent_version,
     v.prompt_version,
     v.agent_model,

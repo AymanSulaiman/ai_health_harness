@@ -16,3 +16,10 @@ models:
     serving:
       +materialized: table
       +schema: serving
+
+vars:
+  # ponytail: 25 points, because one version's own suite runs differ by up to 22 points in
+  # the smallest category (dose_change, 18 cases), and the judge's pass rate swings by 10.
+  # So the gate uses the deterministic pass rate and only catches big drops; lower this
+  # once there are more cases per category or several suite runs per version.
+  max_category_drop: 0.25

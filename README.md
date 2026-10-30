@@ -15,8 +15,10 @@ The repo has two toolchains. The data side (`data_processing/`, uv) is Python be
 DuckDB and, later, dbt live there. The agent and harness (`harness/`, bun) are TypeScript.
 
 Needs [uv](https://docs.astral.sh/uv/), [bun](https://bun.sh) and Docker (Synthea runs
-in a Java container). `make install` sets up both sides; `make check` runs the tests
-and the typecheck. Run from the repository root:
+in a Java container). `make all` does everything from a fresh clone: installs both
+sides, builds the data if it is not built yet, runs the eval and the pipeline with its
+regression gates. `make install` sets up both sides; `make check` runs the tests and the
+typecheck. Run from the repository root:
 
 ```
 uv run --project data_processing ai-health-harness                # every step, in order
@@ -335,6 +337,35 @@ A version's predecessor is the version that first ran just before it. The case d
 compares each version's latest suite run with its predecessor's, so rerunning a version
 does not count a case twice; a dbt unit test in `pipeline/models/serving/schema.yml`
 checks that logic.
+
+### Regression gates
+
+```
+make eval                          # bun run eval, then make transform with the gates
+make eval ARGS="--limit 10 --skip-judge"
+```
+
+Two dbt tests compare each agent version with its predecessor and fail the build:
+
+- a category's deterministic pass rate drops by more than `max_category_drop`
+  (`pipeline/dbt_project.yml`, 25 points)
+- mean allergy recall drops at all
+
+A failure logs a line naming what fell, e.g.
+
+```
+REGRESSION: deterministic_pass_rate in dose_change fell from 70.4% to 25.0% (allowed drop 25.0 points), agent broken-demo|1|... vs 1|1|...
+```
+
+That one came from a prompt deliberately broken to copy doses from the med list. The gate
+is coarse on purpose: one version's own suite runs differ by up to 22 points in the
+smallest category (dose_change has 18 cases), and the judge's pass rate swings by 10, so
+the gate leaves the judge out and allows 25 points. Lower it once categories have more
+cases or versions have several suite runs.
+
+To throw away a run (a demo, a broken version), delete its trace file and rebuild from
+scratch, since `fct_scored_runs` only ever adds rows:
+`uv run --project data_processing dbt build --full-refresh --project-dir pipeline --profiles-dir pipeline`.
 
 Which categories did one agent version regress on, compared with another:
 

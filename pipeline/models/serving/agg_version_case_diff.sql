@@ -2,14 +2,7 @@
 -- run, and in its predecessor's? The predecessor is the version that first ran just before
 -- this one. Comparing latest suite runs keeps reruns of a version from counting twice. Only
 -- cases run in both suites are compared.
-with versions as (
-    select
-        agent_key,
-        lag(agent_key) over (order by first_run_at) as previous_agent_key
-    from {{ ref('dim_agent_version') }}
-),
-
-latest_suite as (
+with latest_suite as (
     select agent_key, arg_max(suite_run_id, created_at) as suite_run_id
     from {{ ref('fct_scored_runs') }}
     group by agent_key
@@ -35,6 +28,6 @@ select
         when now.passed then 'still_passing'
         else 'still_failing'
     end as change
-from versions v
+from {{ ref('dim_agent_version') }} v
 join case_results now on now.agent_key = v.agent_key
 join case_results before on before.agent_key = v.previous_agent_key and before.test_case_id = now.test_case_id
