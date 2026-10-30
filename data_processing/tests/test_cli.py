@@ -19,8 +19,8 @@ def run(monkeypatch, *args: str) -> None:
     cli.main()
 
 
-def test_steps_run_generate_then_ground_truth():
-    assert list(cli.STEPS) == ["generate", "ground-truth"]
+def test_steps_run_in_pipeline_order():
+    assert list(cli.STEPS) == ["generate", "ground-truth", "notes"]
 
 
 def test_no_arguments_runs_every_step_in_order(monkeypatch, calls):

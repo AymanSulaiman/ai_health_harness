@@ -7,6 +7,10 @@ seed, population size and Synthea version are pinned in `data_processing/src/ai_
 It then builds the ground truth: one record per living patient in
 `data/ground_truth.jsonl`, listing what a correct summary must contain (see below).
 
+Last, it renders the test cases the summariser is evaluated on: 100 free-text clinical
+notes in `datasets/notes_v1.jsonl`, each paired with its ground truth, some with
+planted traps (see [Test cases](#test-cases)).
+
 The repo has two toolchains. The data side (`data_processing/`, uv) is Python because
 DuckDB and, later, dbt live there. The agent and harness (`harness/`, bun) are TypeScript.
 
@@ -18,6 +22,7 @@ and the typecheck. Run from the repository root:
 uv run --project data_processing ai-health-harness                # every step, in order
 uv run --project data_processing ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
 uv run --project data_processing ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
+uv run --project data_processing ai-health-harness notes          # ground truth -> datasets/notes_v1.jsonl
 uv run --project data_processing python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
 ```
 
@@ -91,3 +96,60 @@ uv run --project data_processing python -m ai_health_harness.ground_truth spot-c
 
 It prints the same 10 patients each time, each record beside every active raw item,
 with excluded conditions marked `[excluded]`.
+
+## Test cases
+
+`datasets/notes_v1.jsonl` holds 100 test cases, one JSON object per line:
+
+| Field | What it holds |
+|---|---|
+| `case_id` | `v1-001` ... `v1-100` |
+| `dataset_version` | `v1` |
+| `patient_id` | The Synthea patient the case comes from |
+| `categories` | Tags, below |
+| `note` | The free-text note the summariser reads |
+| `ground_truth` | The patient's ground-truth record, the answer key |
+
+Patients are picked with the fixed seed, 40 of them with allergies so the allergy
+traps get enough cases, and patients with no medications and no allergies are left
+out. Notes are built from a template: HPI, past medical history, medications,
+allergies, social history and plan. Every ground-truth item appears in its note.
+
+The dataset is frozen. `datasets/` is gitignored, so each clone rebuilds it, and the
+same seed gives the same cases. `ai-health-harness notes` refuses to overwrite an
+existing file with different cases, so a change to how cases are picked or rendered
+bumps `VERSION` in `notes.py`.
+
+Some notes carry traps, tagged on the case:
+
+- `discontinued_med`: a drug the patient stopped is named, and must not be summarised as current
+- `buried_allergy`: no Allergies section; the allergies are mid-paragraph in social history
+- `dose_change`: the med list shows the old dose; only the plan gives the current one
+- `abbreviations`: BID, PRN, HTN, NKDA ... instead of words
+
+Cases with no trap and at most 3 medications are tagged `simple`; 5 or more, `polypharmacy`.
+
+In v1: simple 19, polypharmacy 26, discontinued_med 32, buried_allergy 29,
+dose_change 18, abbreviations 32 (a case can carry several).
+
+A note with `abbreviations` and `dose_change` (v1-006, shortened):
+
+```
+HPI: 75-year-old woman seen for a routine follow-up visit.
+
+PMH: Anemia; obesity (BMI 30+); CKD 1; HTN; pre-DM; ...
+
+Meds:
+- Clopidogrel 75 MG Oral Tablet
+- lisinopril 10 MG Oral Tablet, 2 tablets, QD
+
+Allergies: NKDA
+
+Plan: Decrease lisinopril 10 MG Oral Tablet to 1 tablet QD. Continue other medications.
+```
+
+The ground truth says 1 tablet, so a summary that copies the med list gets the dose wrong.
+
+To read a case: `sed -n 6p datasets/notes_v1.jsonl | jq -r .note`
+
+A local LLM pass to make the notes read more naturally is planned as dataset v2 (KAN-35).
