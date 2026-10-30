@@ -57,6 +57,8 @@ export const versions = () =>
     order by first_run_at
   `);
 
+const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
+
 /** A version's pass rate in one test category, from serving.agg_version_category. */
 export type CategoryRate = { agent_key: string; category: string; is_trap: boolean; pass_rate: number; run_count: number };
 
@@ -65,5 +67,30 @@ export const categoryRates = (agentKeys: string[]) =>
   query<CategoryRate>(`
     select agent_key, category, is_trap, pass_rate, run_count::int as run_count
     from serving.agg_version_category
-    where agent_key in (${agentKeys.map((k) => `'${k.replaceAll("'", "''")}'`).join(", ") || "null"})
+    where agent_key in (${agentKeys.map(literal).join(", ") || "null"})
+  `);
+
+/** A test case that passed in one version and failed in the other, from serving.agg_version_case_result. */
+export type FlippedCase = {
+  test_case_id: string;
+  categories: string[];
+  passed_after: boolean;
+  run_before: string;
+  run_after: string;
+  failed_before: string | null;
+  failed_after: string | null;
+};
+
+/** Cases whose result differs between two versions' latest suite runs. Keys come from versions(). */
+export const flippedCases = (before: string, after: string) =>
+  query<FlippedCase>(`
+    select
+      b.test_case_id, b.categories, b.passed as passed_after,
+      a.run_id as run_before, b.run_id as run_after,
+      coalesce(a.failed_scorers, 'error: ' || a.error_stage) as failed_before,
+      coalesce(b.failed_scorers, 'error: ' || b.error_stage) as failed_after
+    from serving.agg_version_case_result a
+    join serving.agg_version_case_result b using (test_case_id)
+    where a.agent_key = ${literal(before)} and b.agent_key = ${literal(after)} and a.passed != b.passed
+    order by b.test_case_id
   `);

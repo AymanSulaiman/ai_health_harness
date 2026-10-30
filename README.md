@@ -293,6 +293,12 @@ across versions, the pass rate per test category for a chosen version (ticks and
 labels show the previous version), and every version in a table; pick one there to
 chart its categories. Charts are SVG rendered on the server, with hover tooltips.
 
+Compare (`/compare`) puts any two versions side by side, the latest against its
+predecessor by default: the pass-rate change per test category, biggest drop first, then
+the test cases that newly fail and newly pass, each with the scorers it failed on and links
+to both runs' traces. Cases are compared on each version's latest suite run
+(`serving.agg_version_case_result`).
+
 ## Trace events
 
 Each agent run on one test case produces one trace event: which agent, model and
@@ -353,6 +359,7 @@ or case), so the app can query them directly:
 |---|---|
 | `agg_version_summary` | agent version: pass rates, mean scores, p50/p95 latency, tokens |
 | `agg_version_category` | agent version and test category, same metrics |
+| `agg_version_case_result` | agent version and test case: the result in the version's latest suite run, its run id and failed scorers |
 | `agg_version_case_diff` | agent version and test case: newly failing, newly passing, still passing or still failing against the predecessor |
 | `agg_version_diff` | agent version and category against the predecessor: pass-rate change, cases newly failing and newly passing |
 
