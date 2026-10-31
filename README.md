@@ -14,6 +14,59 @@ planted traps (see [Test cases](#test-cases)).
 The repo has two toolchains. The data side (`data_processing/`, uv) is Python because
 DuckDB and, later, dbt live there. The agent and harness (`harness/`, bun) are TypeScript.
 
+## How it fits together
+
+```mermaid
+flowchart TB
+    subgraph data["Data · make generate"]
+        synthea["Synthea<br/>fixed seed"] --> fhir[("raw_fhir.*<br/>warehouse.duckdb")]
+        fhir --> gt["ground_truth.jsonl<br/>answer key"]
+        gt --> notes["notes_v1.jsonl<br/>100 test cases"]
+        fhir --> medref["med_reference.json<br/>every Synthea drug"]
+    end
+
+    subgraph eval["Eval · bun run eval"]
+        runner["Suite runner"] --> agent["Agent v1 / v2"]
+        agent <--> lookup["lookup_medication<br/>v2 only"]
+        runner --> scorers["Deterministic<br/>scorers"]
+        runner --> judge["LLM judge"]
+        scorers & judge --> emit["Trace emitter"]
+    end
+
+    subgraph cloud["Ollama Cloud"]
+        agentModel["gpt-oss:20b"]
+        judgeModel["kimi-k2.6"]
+    end
+
+    traces[("data/traces/*.jsonl<br/>append-only")]
+
+    subgraph pipeline["Pipeline · make transform"]
+        staging["staging"] --> marts["marts"] --> serving["serving"] --> gates{{"Regression<br/>gates"}}
+    end
+
+    subgraph ui["Dashboard · make dev"]
+        overview["Overview"]
+        compare["Compare"]
+        trace["Run trace"]
+    end
+
+    notes --> runner
+    medref --> lookup
+    agent <--> agentModel
+    judge <--> judgeModel
+    emit --> traces --> staging
+    notes --> staging
+    serving --> ui
+    contract["shared-types<br/>TraceEvent contract"] -.-> emit
+```
+
+Synthea patients become an answer key and 100 clinical notes. The runner sends each note
+through an agent version, scores the summary against the answer key and with an LLM
+judge, and appends one trace event per run. dbt turns the traces into per-version
+rollups and fails the build when a version regresses. The dashboard reads only the
+serving tables. `shared-types` holds the trace contract: the zod schema the emitter
+validates against, and the JSON Schema the Python side and dbt are checked against.
+
 Needs [uv](https://docs.astral.sh/uv/), [bun](https://bun.sh) and Docker (Synthea runs
 in a Java container). `make all` does everything from a fresh clone: installs both
 sides, builds the data if it is not built yet, runs the eval and the pipeline with its
