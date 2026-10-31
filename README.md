@@ -1,18 +1,10 @@
 # ai_health_harness
 
-Generates a reproducible synthetic population with Synthea as FHIR R4, and loads it
-into DuckDB: one `raw_fhir` table per resource type in `data/warehouse.duckdb`. The
-seed, population size and Synthea version are pinned in `data_processing/src/ai_health_harness/synthea.py`.
-
-It then builds the ground truth: one record per living patient in
-`data/ground_truth.jsonl`, listing what a correct summary must contain (see below).
-
-Last, it renders the test cases the summariser is evaluated on: 100 free-text clinical
-notes in `datasets/notes_v1.jsonl`, each paired with its ground truth, some with
-planted traps (see [Test cases](#test-cases)).
-
-The repo has two toolchains. The data side (`data_processing/`, uv) is Python because
-DuckDB and, later, dbt live there. The agent and harness (`harness/`, bun) are TypeScript.
+An eval harness for an AI agent that summarises clinical notes. Synthetic patients from
+Synthea become an answer key and 100 test-case notes with planted traps; each agent
+version summarises every note, deterministic scorers and an LLM judge grade the
+summaries, and a dbt pipeline turns the results into per-version rollups, regression
+gates and a dashboard.
 
 ## How it fits together
 
@@ -67,24 +59,45 @@ rollups and fails the build when a version regresses. The dashboard reads only t
 serving tables. `shared-types` holds the trace contract: the zod schema the emitter
 validates against, and the JSON Schema the Python side and dbt are checked against.
 
+| Folder | Language | What it holds |
+|---|---|---|
+| `data_processing/` | Python (uv) | Synthea, the ground truth, the test cases |
+| `agent/` | TypeScript (bun) | The summariser under test and the model client |
+| `harness/` | TypeScript (bun) | Suite runner, scorers, LLM judge, trace emitter |
+| `shared-types/` | TypeScript (bun) | The trace event contract |
+| `pipeline/` | dbt (Python) | Staging, marts, serving tables and regression gates |
+| `dashboard/` | Next.js | Overview, version comparison and run traces |
+
+## Quick start
+
 Needs [uv](https://docs.astral.sh/uv/), [bun](https://bun.sh) and Docker (Synthea runs
-in a Java container). `make all` does everything from a fresh clone: installs both
-sides, builds the data if it is not built yet, runs the eval and the pipeline with its
-regression gates. `make install` sets up both sides; `make check` runs the tests and the
-typecheck. Run from the repository root:
+in a Java container). Put an [Ollama Cloud](https://ollama.com/cloud) key in `.env` at
+the repository root (see [Models](#models)), then run from the repository root:
+
+| Command | What it does |
+|---|---|
+| `make all` | Everything from a fresh clone: install, build the data if not built yet, eval, pipeline |
+| `make install` | Python and bun dependencies |
+| `make generate` | Synthea → DuckDB → ground truth → test cases → drug reference |
+| `make eval` | Every test case through the agent, then the pipeline and its regression gates |
+| `make transform` | The pipeline alone |
+| `make dev` | The dashboard on http://localhost:3000 |
+| `make docs` | The dbt docs site |
+| `make check` | Unit tests and typechecks, no model calls or data needed (what CI runs) |
+
+The data steps can also run one at a time:
 
 ```
 uv run --project data_processing ai-health-harness                # every step, in order
 uv run --project data_processing ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
 uv run --project data_processing ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
 uv run --project data_processing ai-health-harness notes          # ground truth -> datasets/notes_v1.jsonl
-uv run --project data_processing ai-health-harness med-reference  # every Synthea drug -> data/med_reference.json (agent v2's lookup)
-uv run --project data_processing python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
+uv run --project data_processing ai-health-harness med-reference  # every Synthea drug -> data/med_reference.json
 ```
 
-Rerunning replaces the `raw_fhir` schema; the same seed gives the same patients.
-
-Tests: `uv run --project data_processing pytest`
+The seed, population size and Synthea version are pinned in
+`data_processing/src/ai_health_harness/synthea.py`. Rerunning replaces the `raw_fhir`
+schema; the same seed gives the same patients.
 
 ## FHIR resources
 
@@ -127,6 +140,10 @@ Things worth knowing when querying:
   AllergyIntolerance, `status` on MedicationRequest.
 - Most prescriptions are `completed`; only a small share are `active`, and some active
   ones have no dose or timing (`dosageInstruction`). Most patients have no allergies.
+
+```
+uv run --project data_processing python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
+```
 
 ## Ground truth
 
@@ -183,10 +200,9 @@ Some notes carry traps, tagged on the case:
 - `dose_change`: the med list shows the old dose; only the plan gives the current one
 - `abbreviations`: BID, PRN, HTN, NKDA ... instead of words
 
-Cases with no trap and at most 3 medications are tagged `simple`; 5 or more, `polypharmacy`.
-
-In v1: simple 19, polypharmacy 26, discontinued_med 32, buried_allergy 29,
-dose_change 18, abbreviations 32 (a case can carry several).
+Cases with no trap and at most 3 medications are tagged `simple`; 5 or more,
+`polypharmacy`. In v1: simple 19, polypharmacy 26, discontinued_med 32,
+buried_allergy 29, dose_change 18, abbreviations 32 (a case can carry several).
 
 A note with `abbreviations` and `dose_change` (v1-006, shortened):
 
@@ -237,10 +253,13 @@ Put your key from ollama.com/settings/keys in a `.env` file at the repository ro
 
 ```
 OLLAMA_API_KEY=...
-``` Every call returns the text, input and output token counts
-(null if the provider leaves them out) and latency. Passing a zod schema puts it in
-the system prompt with an instruction to reply in JSON only: Ollama Cloud ignores
-the APIs' own structured-output options, so the caller still validates the reply. Failures throw `ModelError`.
+```
+
+Every call returns the text, input and output token counts (null if the provider leaves
+them out), latency, and any tool calls the model asked for. Passing a zod schema puts it
+in the system prompt with an instruction to reply in JSON only: Ollama Cloud ignores the
+APIs' own structured-output options, so the caller still validates the reply. Failures
+throw `ModelError`.
 
 `agent/src/model.live.test.ts` makes one small call to each of the agent and judge
 models, and skips when their key is not set (as in CI).
@@ -257,10 +276,9 @@ bun run agent v1-006 v1-012   # these cases
 ```
 
 It prints each summary with its latency and token counts; to score runs, use the
-[suite runner](#suite-runner). `summarise` never throws:
-a failed model call returns a `model` error, and a reply that does not validate is
-retried once with the problem pointed out, then returns a `parse` error with the last
-reply kept.
+[suite runner](#suite-runner). `summarise` never throws: a failed model call returns a
+`model` error, and a reply that does not validate is retried once with the problem
+pointed out, then returns a `parse` error with the last reply kept.
 
 Agent versions live in `AGENTS` in `agent/src/summarise.ts`, each with its own prompt
 and tools; the suite runner picks one with `--agent` (default 1):
@@ -290,16 +308,20 @@ summary and the case's ground truth, each giving one score for the trace event.
 | `dose_match` | share of listed medications with a recorded dose or timing that have both right | all right |
 | `hallucinations` | share of listed medications and allergies on record | nothing made up |
 
-Names match on their key words, ignoring packaging (Oral Tablet, ER, hydrochloride)
-and case, but any strength the summary gives must be on record: "Lisinopril", "lisinopril
-10mg" and "Seasonique" all match their prescriptions; "lisinopril 20 mg" does not
-match a 10 MG one. A dose is right as a unit count ("1 tablet") or as the same amount by
-strength ("10 MG" for one 10 MG tablet). Frequencies are compared as times per day, so
-"BID" and "twice daily" agree. Only the part of a name before the first comma is matched,
-since the agent sometimes copies the whole med-list line ("..., 2 tablets, QD") into it,
-and "NKDA", "None" or "Unknown" written as an allergy is ignored. "Allergic disposition" is not expected in a summary,
-since it names no substance. Conditions are left to the LLM judge (KAN-21): "HTN" and
-"pre-DM" defeat string matching.
+How names, doses and frequencies are compared:
+
+- Names match on their key words, ignoring packaging (Oral Tablet, ER, hydrochloride)
+  and case, but any strength the summary gives must be on record: "Lisinopril",
+  "lisinopril 10mg" and "Seasonique" all match their prescriptions; "lisinopril 20 mg"
+  does not match a 10 MG one.
+- Only the part of a name before the first comma is matched, since the agent sometimes
+  copies the whole med-list line ("..., 2 tablets, QD") into it.
+- A dose is right as a unit count ("1 tablet") or as the same amount by strength
+  ("10 MG" for one 10 MG tablet).
+- Frequencies are compared as times per day, so "BID" and "twice daily" agree.
+- "NKDA", "None" or "Unknown" written as an allergy is ignored, and "Allergic
+  disposition" is never expected, since it names no substance.
+- Conditions are left to the LLM judge: "HTN" and "pre-DM" defeat string matching.
 
 `harness/src/scorers.dataset.test.ts` checks the scorers on all 100 cases: restating
 the ground truth scores full marks, and dropping any one item is caught.
@@ -332,49 +354,12 @@ bun run eval --skip-judge          # deterministic scorers only: faster, half th
 bun run eval --agent 2             # another agent version
 ```
 
-`harness/src/suite.ts` runs each case through the agent (4 at a time by default), scores
-it, has the judge grade it, and writes its trace event to `data/traces/<suite_run_id>.jsonl`, printing a line per
-case and pass rates per scorer at the end. Kill it at any point and rerun with the
-`--suite` id it printed to finish the rest. Any event counts as done, a failed run
-included, so each suite run has one event per case.
-
-## Dashboard
-
-`dashboard/` is a Next.js app (App Router, TypeScript, Tailwind) over the serving tables.
-
-```
-make dev    # http://localhost:3000
-```
-
-Pages are server components that read `serving.*` through the DuckDB Node API
-(`dashboard/lib/db.ts`); nothing in the browser touches the database. Each query opens a
-read-only connection and closes it, because DuckDB will not let `make transform` write
-while another process holds the file open, so the app can stay running through an eval.
-Set `WAREHOUSE_PATH` to read a database other than `data/warehouse.duckdb`.
-
-The overview answers "is the latest version better or worse?" at the top: a verdict
-against the previous version (worse if allergy recall fell or the pass rate dropped 5
-points or more; better if it rose 5 or more; otherwise about the same, since one
-version's own runs differ by that much), then tiles for pass rate, allergy recall, runs
-with anything made up and p95 latency, each with its change. Below are the pass rate
-across versions, the pass rate per test category for a chosen version (ticks and "was"
-labels show the previous version), and every version in a table; pick one there to
-chart its categories. Charts are SVG rendered on the server, with hover tooltips.
-
-Compare (`/compare`) puts any two versions side by side, the latest against its
-predecessor by default: the pass-rate change per test category, biggest drop first, then
-the test cases that newly fail and newly pass, each with the scorers it failed on and links
-to both runs' traces. Cases are compared on each version's latest suite run
-(`serving.agg_version_case_result`).
-
-The trace view (`/runs/<run_id>`) shows one run, reached from a failing case on the
-overview or a flipped case on Compare. "What went wrong" lists each failed score with its
-reason. The note has every allergy and medication on the record highlighted where it
-appears: red if the summary missed it, blue if it found it. Beside it, the record and the
-summary are listed item by item (found, missed, not on record), using the scorers' own
-matching (`alignment` in `harness/src/scorers.ts`), so the flags always agree with the
-scores. Below are conditions, the narrative, the judge's rationale, tokens, latency, tool
-calls and the raw model output.
+`harness/src/suite.ts` runs each case through the agent (4 at a time by default),
+scores it, has the judge grade it, and writes its trace event to
+`data/traces/<suite_run_id>.jsonl`, printing a line per case and pass rates per scorer
+at the end. Kill it at any point and rerun with the `--suite` id it printed to finish
+the rest. Any event counts as done, a failed run included, so each suite run has one
+event per case.
 
 ## Trace events
 
@@ -391,8 +376,8 @@ test fails while the two differ.
 `emit` in `harness/src/traces.ts` validates each event and appends it as one line to
 `data/traces/<suite_run_id>.jsonl`; an invalid event throws and writes nothing. These
 files are the raw layer: lines are only ever appended, and DuckDB reads them directly,
-`SELECT * FROM read_json('data/traces/*.jsonl')`. They are files rather than a table
-in `warehouse.duckdb` because DuckDB lets only one process write a database file at a time.
+`SELECT * FROM read_json('data/traces/*.jsonl')`. They are files rather than a table in
+`warehouse.duckdb` because DuckDB lets only one process write a database file at a time.
 
 ## Pipeline
 
@@ -401,23 +386,28 @@ repository root:
 
 ```
 make transform    # source freshness, every model, then every test (regression gates included)
+make docs         # the dbt docs site, with every column described
 ```
 
-Sources read files in place: `raw.trace_events` is `data/traces/*.jsonl`, `raw.test_cases`
-is `datasets/notes_*.jsonl`, and `raw_fhir.*` are the Synthea tables. The staging models
-are tables in the `staging` schema:
+The trace files must exist first: run `bun run eval` at least once.
+
+### Staging
+
+Sources read files in place: `raw.trace_events` is `data/traces/*.jsonl`,
+`raw.test_cases` is `datasets/notes_*.jsonl`, and `raw_fhir.*` are the Synthea tables.
 
 | Model | One row per |
 |---|---|
-| `stg_trace_events` | agent run: versions, tokens, latency, error, outputs |
+| `stg_trace_events` | agent run: versions, tokens, latency, error, tool calls, outputs |
 | `stg_trace_scores` | run and scorer (`score_id` is `<run_id>:<scorer>`) |
 | `stg_test_cases` | test case: categories and item counts, note, ground truth |
 
 Keys are tested unique and not null, every run's test case and every score's run must
-exist, and freshness warns when no run was traced in 7 days. The trace files must exist
-first: run `bun run eval` at least once.
+exist, and freshness warns when no run was traced in 7 days.
 
-The marts, in the `marts` schema, are what to query:
+### Marts
+
+What to query:
 
 | Model | One row per |
 |---|---|
@@ -425,58 +415,6 @@ The marts, in the `marts` schema, are what to query:
 | `dim_agent_version` | agent version, prompt version and model together (`agent_key`) |
 | `dim_judge_version` | judge model and judge prompt version together (`judge_key`) |
 | `dim_test_case` | test case and category, so a case with two tags has two rows |
-
-`make docs` builds and serves the dbt docs site, with every column described.
-
-The serving tables, in the `serving` schema, are what the dashboard reads; it never
-queries the layers below. They are small (a row per version, or per version and category
-or case), so the app can query them directly:
-
-| Model | One row per |
-|---|---|
-| `agg_version_summary` | agent version: pass rates, mean scores, p50/p95 latency, tokens |
-| `agg_version_category` | agent version and test category, same metrics |
-| `agg_version_case_result` | agent version and test case: the result in the version's latest suite run, its run id and failed scorers |
-| `agg_version_case_diff` | agent version and test case: newly failing, newly passing, still passing or still failing against the predecessor |
-| `run_trace` | run: note, ground truth, output, every score with its detail, tool calls (for the trace view; query by `run_id`) |
-| `agg_version_diff` | agent version and category against the predecessor: pass-rate change, cases newly failing and newly passing |
-
-A version's predecessor is the version that first ran just before it. The case diff
-compares each version's latest suite run with its predecessor's, so rerunning a version
-does not count a case twice; a dbt unit test in `pipeline/models/serving/schema.yml`
-checks that logic.
-
-### Regression gates
-
-```
-make eval                          # bun run eval, then make transform with the gates
-make eval ARGS="--limit 10 --skip-judge"
-```
-
-Two dbt tests compare each agent version with its predecessor and fail the build:
-
-- a category's deterministic pass rate drops by more than `max_category_drop`
-  (`pipeline/dbt_project.yml`, 25 points)
-- mean allergy recall drops at all
-
-A failure logs a line naming what fell, e.g.
-
-```
-REGRESSION: deterministic_pass_rate in dose_change fell from 70.4% to 25.0% (allowed drop 25.0 points), agent broken-demo|1|... vs 1|1|...
-```
-
-That one came from a prompt deliberately broken to copy doses from the med list. Agent v2
-trips it for real: `dose_change` falls from 70% to 28%, because it copies the old dose
-from the med list it has just looked up. `make transform` builds every model before
-running the tests, so a failing gate still leaves the dashboard showing why. The gate
-is coarse on purpose: one version's own suite runs differ by up to 22 points in the
-smallest category (dose_change has 18 cases), and the judge's pass rate swings by 10, so
-the gate leaves the judge out and allows 25 points. Lower it once categories have more
-cases or versions have several suite runs.
-
-To throw away a run (a demo, a broken version), delete its trace file and rebuild from
-scratch, since `fct_scored_runs` only ever adds rows:
-`uv run --project data_processing dbt build --full-refresh --project-dir pipeline --profiles-dir pipeline`.
 
 Which categories did one agent version regress on, compared with another:
 
@@ -491,7 +429,99 @@ select after.category, before.pass_rate as before, after.pass_rate as after, aft
 from by_category after
 join by_category before using (category)
 where before.agent_key = '1|1|ollama-cloud/gpt-oss:20b'
-  and after.agent_key = '2|1|ollama-cloud/gpt-oss:20b'
+  and after.agent_key = '2|2|ollama-cloud/gpt-oss:20b'
   and after.pass_rate < before.pass_rate
 order by after.pass_rate - before.pass_rate
 ```
+
+### Serving
+
+What the dashboard reads; it never queries the layers below. The tables are small (a
+row per version, or per version and category or case), so the app queries them
+directly:
+
+| Model | One row per |
+|---|---|
+| `agg_version_summary` | agent version: pass rates, mean scores, p50/p95 latency, tokens |
+| `agg_version_category` | agent version and test category, same metrics |
+| `agg_version_case_result` | agent version and test case: the result in the version's latest suite run, its run id and failed scorers |
+| `agg_version_case_diff` | agent version and test case: newly failing, newly passing, still passing or still failing against the predecessor |
+| `agg_version_diff` | agent version and category against the predecessor: pass-rate change, cases newly failing and newly passing |
+| `run_trace` | run: note, ground truth, output, every score with its detail, tool calls (for the trace view; query by `run_id`) |
+
+A version's predecessor is the version that first ran just before it. The case diff
+compares each version's latest suite run with its predecessor's, so rerunning a version
+does not count a case twice; dbt unit tests in `pipeline/models/serving/schema.yml`
+check that logic.
+
+### Regression gates
+
+```
+make eval                                  # bun run eval, then make transform with the gates
+make eval ARGS="--limit 10 --skip-judge"
+```
+
+Two dbt tests compare each agent version with its predecessor and fail the build:
+
+- a category's deterministic pass rate drops by more than `max_category_drop`
+  (`pipeline/dbt_project.yml`, 25 points)
+- mean allergy recall drops at all
+
+A failure logs a line naming what fell:
+
+```
+REGRESSION: deterministic_pass_rate in dose_change fell from 70.4% to 27.8% (allowed drop 25.0 points), agent 2|2|ollama-cloud/gpt-oss:20b vs 1|1|ollama-cloud/gpt-oss:20b
+```
+
+That one is agent v2, which copies the old dose from the med list it has just looked
+up. `make transform` builds every model before running the tests, so a failing gate
+still leaves the dashboard showing why.
+
+The gate is coarse on purpose: one version's own suite runs differ by up to 22 points in
+the smallest category (dose_change has 18 cases), and the judge's pass rate swings by
+10, so the gate leaves the judge out and allows 25 points. Lower it once categories have
+more cases or versions have several suite runs.
+
+To throw away a run (a demo, a broken version), delete its trace file and rebuild from
+scratch, since `fct_scored_runs` only ever adds rows:
+
+```
+uv run --project data_processing dbt build --full-refresh --project-dir pipeline --profiles-dir pipeline
+```
+
+## Dashboard
+
+`dashboard/` is a Next.js app (App Router, TypeScript, Tailwind) over the serving tables.
+
+```
+make dev    # http://localhost:3000
+```
+
+Pages are server components that read `serving.*` through the DuckDB Node API
+(`dashboard/lib/db.ts`); nothing in the browser touches the database. Each query opens a
+read-only connection and closes it, because DuckDB will not let `make transform` write
+while another process holds the file open, so the app can stay running through an eval.
+Set `WAREHOUSE_PATH` to read a database other than `data/warehouse.duckdb`. Charts are
+SVG rendered on the server, with hover tooltips.
+
+| Page | What it shows |
+|---|---|
+| Overview (`/`) | Whether the latest version is better or worse than the previous one, headline tiles, pass rate across versions, pass rate by category, failing cases, every version |
+| Compare (`/compare`) | Any two versions side by side: pass-rate change per category, test cases that newly fail and newly pass |
+| Run trace (`/runs/<run_id>`) | One run: what went wrong, the note with record items highlighted, the record against the summary item by item, the judge's rationale, tokens, latency, tool calls |
+
+**Overview.** The verdict says worse if allergy recall fell or the pass rate dropped 5
+points or more, better if it rose 5 or more, and otherwise about the same, since one
+version's own runs differ by that much. Tiles show pass rate, allergy recall, runs with
+anything made up and p95 latency, each with its change. The category chart marks the
+previous version with ticks and "was" labels; pick a version in the table to chart it.
+
+**Compare.** Defaults to the latest version against its predecessor. Each flipped case
+lists the scorers it failed on and links to both runs' traces. Cases are compared on
+each version's latest suite run (`serving.agg_version_case_result`).
+
+**Run trace.** Reached from a failing case on the overview or a flipped case on
+Compare. Every allergy and medication on the record is highlighted in the note where it
+appears: red if the summary missed it, blue if it found it. The found, missed and not
+on record flags use the scorers' own matching (`alignment` in `harness/src/scorers.ts`),
+so they always agree with the scores.
