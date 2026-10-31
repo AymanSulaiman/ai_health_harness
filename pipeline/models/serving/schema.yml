@@ -134,6 +134,24 @@ models:
       - name: cases_compared
         description: Cases in this category run by both versions' latest suites.
 
+  - name: run_trace
+    description: >
+      Grain: one row per run, with everything the trace view shows: the note, the ground
+      truth, the agent's output, every score with its detail, tool calls, tokens and latency.
+      Wide (it carries the note), so query it by run_id.
+    columns:
+      - name: run_id
+        data_tests: [unique, not_null]
+      - name: note
+        description: The clinical note the agent read.
+        data_tests: [not_null]
+      - name: ground_truth
+        description: The answer key (JSON), as in datasets/notes_<version>.jsonl.
+      - name: parsed_output
+        description: The agent's summary (JSON); null when the run failed before parsing.
+      - name: scores
+        description: Every score as a list of {scorer, value, passed, detail}.
+
 unit_tests:
   - name: case_result_uses_each_versions_latest_suite
     description: v1 ran twice; only its later suite counts.

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { categoryRates, versions as loadVersions, type Version } from "@/lib/db";
+import { categoryRates, failingCases, versions as loadVersions, type Version } from "@/lib/db";
 import { CategoryBars, PassRateLine } from "./charts";
 
 // Read the warehouse on every request, so a new `make eval` shows up on reload.
@@ -53,7 +53,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const latestBefore = latest.previous_agent_key ? byKey.get(latest.previous_agent_key) : undefined;
   const selected = byKey.get((await searchParams).version ?? "") ?? latest;
   const selectedBefore = selected.previous_agent_key ? byKey.get(selected.previous_agent_key) : undefined;
-  const rates = await categoryRates([selected.agent_key, ...(selectedBefore ? [selectedBefore.agent_key] : [])]);
+  const [rates, failing] = await Promise.all([
+    categoryRates([selected.agent_key, ...(selectedBefore ? [selectedBefore.agent_key] : [])]),
+    failingCases(selected.agent_key),
+  ]);
   const v = latestBefore && verdict(latest, latestBefore);
 
   return (
@@ -90,6 +93,33 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           {selectedBefore ? " The black tick is the previous version." : " No previous version to compare."}
         </p>
         <div className="mt-3"><CategoryBars rates={rates.filter((r) => r.agent_key === selected.agent_key)} previous={rates.filter((r) => r.agent_key === selectedBefore?.agent_key)} /></div>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold">Failing cases ({failing.length})</h2>
+        <p className="text-sm text-[var(--ink-2)]">
+          In the latest suite run of agent {selected.agent_version}, prompt {selected.prompt_version}. Open one to see why.
+        </p>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-[var(--grid)] text-[var(--ink-2)]">
+              <tr>
+                <th className="py-2 pr-4 font-medium">Case</th>
+                <th className="py-2 pr-4 font-medium">Categories</th>
+                <th className="py-2 pr-4 font-medium">Failed on</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failing.map((c) => (
+                <tr key={c.test_case_id} className="border-b border-[var(--grid)]">
+                  <td className="py-2 pr-4 font-mono"><Link href={`/runs/${c.run_id}`} className="underline underline-offset-4">{c.test_case_id}</Link></td>
+                  <td className="py-2 pr-4">{c.categories.map((x) => x.replaceAll("_", " ")).join(", ") || "–"}</td>
+                  <td className="py-2 pr-4">{(c.failed_scorers ?? `error: ${c.error_stage}`).replaceAll("_", " ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section>

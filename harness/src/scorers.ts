@@ -258,3 +258,28 @@ export function scoreRun(summary: Summary | null, truth: GroundTruth): Score[] {
     hallucinations(summary, truth),
   ];
 }
+
+/**
+ * Which items the scorers matched, for showing a run: each record item found or missed,
+ * each summary item on record or not. Uses the same matching as the scorers above.
+ */
+export function alignment(summary: Summary, truth: GroundTruth) {
+  const medPairs = match(medNames(summary), truth.medications.map((m) => m.name));
+  const allergies = scorable(truth);
+  const listed = listedAllergies(summary);
+  const foundAllergies = match(listed.map((a) => a.substance), allergies.map((a) => a.substance));
+  const onRecordAllergies = match(listed.map((a) => a.substance), truth.allergies.map((a) => a.substance));
+  return {
+    medications: {
+      record: truth.medications.map((m, j) => ({ ...m, found: medPairs.some(([, t]) => t === j) })),
+      summary: summary.medications.map((m, i) => ({ ...m, onRecord: medPairs.some(([o]) => o === i) })),
+    },
+    allergies: {
+      record: allergies.map((a, j) => ({ ...a, substance: plain(a.substance), found: foundAllergies.some(([, t]) => t === j) })),
+      summary: summary.allergies.map((a) => {
+        const i = listed.indexOf(a);
+        return { ...a, placeholder: i === -1, onRecord: i !== -1 && onRecordAllergies.some(([o]) => o === i) };
+      }),
+    },
+  };
+}

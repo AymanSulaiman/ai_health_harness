@@ -299,6 +299,15 @@ the test cases that newly fail and newly pass, each with the scorers it failed o
 to both runs' traces. Cases are compared on each version's latest suite run
 (`serving.agg_version_case_result`).
 
+The trace view (`/runs/<run_id>`) shows one run, reached from a failing case on the
+overview or a flipped case on Compare. "What went wrong" lists each failed score with its
+reason. The note has every allergy and medication on the record highlighted where it
+appears: red if the summary missed it, blue if it found it. Beside it, the record and the
+summary are listed item by item (found, missed, not on record), using the scorers' own
+matching (`alignment` in `harness/src/scorers.ts`), so the flags always agree with the
+scores. Below are conditions, the narrative, the judge's rationale, tokens, latency, tool
+calls and the raw model output.
+
 ## Trace events
 
 Each agent run on one test case produces one trace event: which agent, model and
@@ -361,6 +370,7 @@ or case), so the app can query them directly:
 | `agg_version_category` | agent version and test category, same metrics |
 | `agg_version_case_result` | agent version and test case: the result in the version's latest suite run, its run id and failed scorers |
 | `agg_version_case_diff` | agent version and test case: newly failing, newly passing, still passing or still failing against the predecessor |
+| `run_trace` | run: note, ground truth, output, every score with its detail, tool calls (for the trace view; query by `run_id`) |
 | `agg_version_diff` | agent version and category against the predecessor: pass-rate change, cases newly failing and newly passing |
 
 A version's predecessor is the version that first ran just before it. The case diff

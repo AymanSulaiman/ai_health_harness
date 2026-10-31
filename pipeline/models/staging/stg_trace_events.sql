@@ -13,6 +13,7 @@ select
     output_tokens,
     latency_ms,
     len(tool_calls) as tool_call_count,
+    to_json(tool_calls) as tool_calls,
     error.stage as error_stage,
     error.message as error_message,
     raw_output,

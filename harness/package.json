@@ -14,5 +14,9 @@
     "shared-types": "workspace:*",
     "agent": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "exports": {
+    "./scorers": "./src/scorers.ts",
+    "./ground-truth": "./src/ground-truth.ts"
   }
 }

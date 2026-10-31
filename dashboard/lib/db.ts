@@ -94,3 +94,52 @@ export const flippedCases = (before: string, after: string) =>
     where a.agent_key = ${literal(before)} and b.agent_key = ${literal(after)} and a.passed != b.passed
     order by b.test_case_id
   `);
+
+/** Everything about one run, from serving.run_trace. */
+export type RunTrace = {
+  run_id: string;
+  suite_run_id: string;
+  test_case_id: string;
+  agent_key: string;
+  agent_version: string;
+  prompt_version: string;
+  agent_model: string;
+  judge_model: string | null;
+  judge_prompt_version: string | null;
+  created_at: string;
+  passed: boolean;
+  error_stage: string | null;
+  error_message: string | null;
+  latency_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  tool_calls: string;
+  raw_output: string | null;
+  parsed_output: string | null;
+  scores: { scorer: string; value: number; passed: boolean; detail: string | null }[];
+  categories: string[];
+  note: string;
+  ground_truth: string;
+};
+
+/** One run, or undefined. The id is checked to be a UUID before it reaches SQL. */
+export async function runTrace(runId: string): Promise<RunTrace | undefined> {
+  if (!/^[0-9a-f-]{36}$/i.test(runId)) return undefined;
+  const [row] = await query<RunTrace>(`
+    select * replace (strftime(created_at, '%Y-%m-%d %H:%M') as created_at,
+      tool_calls::varchar as tool_calls, parsed_output::varchar as parsed_output, ground_truth::varchar as ground_truth)
+    from serving.run_trace where run_id = '${runId}'
+  `);
+  return row;
+}
+
+/** A failed case in a version's latest suite run, from serving.agg_version_case_result. */
+export type FailingCase = { test_case_id: string; categories: string[]; run_id: string; error_stage: string | null; failed_scorers: string | null };
+
+export const failingCases = (agentKey: string) =>
+  query<FailingCase>(`
+    select test_case_id, categories, run_id, error_stage, failed_scorers
+    from serving.agg_version_case_result
+    where agent_key = ${literal(agentKey)} and not passed
+    order by test_case_id
+  `);

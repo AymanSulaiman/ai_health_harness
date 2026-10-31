@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Score, type Summary } from "shared-types";
 import type { GroundTruth } from "./ground-truth";
 import {
-  allergyRecall, doseAmount, doseMatch, doseRight, frequencyRate, hallucinations, match,
+  alignment, allergyRecall, doseAmount, doseMatch, doseRight, frequencyRate, hallucinations, match,
   medicationPrecision, medicationRecall, schemaValid, scoreRun, similarity,
 } from "./scorers";
 
@@ -170,4 +170,19 @@ describe("scorers", () => {
     const empty: Summary = { narrative: "", medications: [], allergies: [], conditions: [] };
     for (const s of scoreRun(empty, truth)) expect(s).toMatchObject({ value: 1, passed: true });
   });
+});
+
+test("alignment flags what the scorers count as missed and made up", () => {
+  const summary = only({
+    medications: [m("lisinopril 10 MG Oral Tablet, 1 tablet, QD"), m("Ibuprofen 200 MG Oral Tablet")],
+    allergies: [a("shellfish"), a("NKDA"), a("peanuts")],
+  });
+  const al = alignment(summary, TRUTH);
+  expect(al.medications.record.map((x) => x.found)).toEqual([true, false, false]);
+  expect(al.medications.summary.map((x) => x.onRecord)).toEqual([true, false]);
+  expect(al.allergies.record.map((x) => [x.substance, x.found])).toEqual([["Shellfish", true], ["Tree pollen", false], ["House dust mite", false]]);
+  expect(al.allergies.summary.map((x) => [x.substance, x.onRecord, x.placeholder])).toEqual([["shellfish", true, false], ["NKDA", false, true], ["peanuts", false, false]]);
+  // the same items the scorers report
+  expect(allergyRecall(summary, TRUTH).detail).toBe("missed: Tree pollen; House dust mite");
+  expect(hallucinations(summary, TRUTH).detail).toBe("2 not on record: medication Ibuprofen 200 MG Oral Tablet; allergy peanuts");
 });
