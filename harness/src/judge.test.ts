@@ -19,7 +19,7 @@ function scripted(...replies: string[]) {
     spec: "fake/judge",
     async chat(messages) {
       sent.push(messages);
-      return { text: replies.shift()!, input_tokens: 1, output_tokens: 1, latency_ms: 1 };
+      return { text: replies.shift()!, input_tokens: 1, output_tokens: 1, latency_ms: 1, tool_calls: [] };
     },
   };
   return { client, sent };

@@ -25,6 +25,7 @@ uv run --project data_processing ai-health-harness                # every step, 
 uv run --project data_processing ai-health-harness generate       # Synthea -> raw_fhir tables in DuckDB
 uv run --project data_processing ai-health-harness ground-truth   # raw_fhir -> data/ground_truth.jsonl
 uv run --project data_processing ai-health-harness notes          # ground truth -> datasets/notes_v1.jsonl
+uv run --project data_processing ai-health-harness med-reference  # every Synthea drug -> data/med_reference.json (agent v2's lookup)
 uv run --project data_processing python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SELECT count(*) FROM raw_fhir.medication_request'))"
 ```
 
@@ -206,7 +207,20 @@ It prints each summary with its latency and token counts; to score runs, use the
 [suite runner](#suite-runner). `summarise` never throws:
 a failed model call returns a `model` error, and a reply that does not validate is
 retried once with the problem pointed out, then returns a `parse` error with the last
-reply kept. The prompt is `SYSTEM_PROMPT`, versioned by `PROMPT_VERSION`.
+reply kept.
+
+Agent versions live in `AGENTS` in `agent/src/summarise.ts`, each with its own prompt
+and tools; the suite runner picks one with `--agent` (default 1):
+
+| Agent | What it does |
+|---|---|
+| 1 | One model call: the note in, the summary out |
+| 2 | Adds a `lookup_medication` tool (`agent/src/lookup.ts`): the model looks up each current medication as written, and gets back up to 3 standard names from every drug Synthea prescribes (`data/med_reference.json`), matched on letter trigrams so typos and brands still match. Every call is recorded in the trace |
+
+`gpt-oss:20b` asks for one lookup per turn even when told to batch them, so v2 takes a
+turn per medication: slower and several times the tokens. It may use up to 14 tool
+turns (the longest medication list is 13); past that, calls are refused with an error
+telling it to answer.
 
 ## Scorers
 
@@ -262,6 +276,7 @@ bun run eval                       # every case in datasets/notes_v1.jsonl, as a
 bun run eval --suite <id>          # resume a suite run: cases that already have an event are skipped
 bun run eval --concurrency 2 --limit 10
 bun run eval --skip-judge          # deterministic scorers only: faster, half the model calls
+bun run eval --agent 2             # another agent version
 ```
 
 `harness/src/suite.ts` runs each case through the agent (4 at a time by default), scores
@@ -332,7 +347,7 @@ in `warehouse.duckdb` because DuckDB lets only one process write a database file
 repository root:
 
 ```
-make transform    # source freshness, then dbt build: models and their tests
+make transform    # source freshness, every model, then every test (regression gates included)
 ```
 
 Sources read files in place: `raw.trace_events` is `data/traces/*.jsonl`, `raw.test_cases`
@@ -397,7 +412,10 @@ A failure logs a line naming what fell, e.g.
 REGRESSION: deterministic_pass_rate in dose_change fell from 70.4% to 25.0% (allowed drop 25.0 points), agent broken-demo|1|... vs 1|1|...
 ```
 
-That one came from a prompt deliberately broken to copy doses from the med list. The gate
+That one came from a prompt deliberately broken to copy doses from the med list. Agent v2
+trips it for real: `dose_change` falls from 70% to 28%, because it copies the old dose
+from the med list it has just looked up. `make transform` builds every model before
+running the tests, so a failing gate still leaves the dashboard showing why. The gate
 is coarse on purpose: one version's own suite runs differ by up to 22 points in the
 smallest category (dose_change has 18 cases), and the judge's pass rate swings by 10, so
 the gate leaves the judge out and allows 25 points. Lower it once categories have more

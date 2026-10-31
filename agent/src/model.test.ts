@@ -108,3 +108,29 @@ test("failures throw ModelError: HTTP errors, empty replies, timeouts, unreachab
   const gone = { providers: { gone: { base_url: "http://localhost:1/v1" } } };
   await expect(modelClient("gone/m", gone).chat([])).rejects.toThrow("request failed");
 });
+
+test("tools are offered, tool calls come back, and are sent back in the API's shape", async () => {
+  reply = () =>
+    Response.json({
+      choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "lookup", arguments: '{"q":"x"}' } }] } }],
+    });
+  const tool = { name: "lookup", description: "find", parameters: { type: "object", properties: { q: { type: "string" } } } };
+  const client = modelClient("local/qwen3:8b", config);
+  const result = await client.chat([{ role: "user", content: "hi" }], { tools: [tool] });
+  expect(result).toMatchObject({ text: "", tool_calls: [{ id: "c1", name: "lookup", arguments: '{"q":"x"}' }] });
+  expect(seen.at(-1)!.body).toMatchObject({ tools: [{ type: "function", function: tool }] });
+
+  reply = ok("done");
+  await client.chat([
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "", tool_calls: result.tool_calls },
+    { role: "tool", tool_call_id: "c1", content: "[]" },
+  ]);
+  expect(seen.at(-1)!.body).toMatchObject({
+    messages: [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "lookup", arguments: '{"q":"x"}' } }] },
+      { role: "tool", tool_call_id: "c1", content: "[]" },
+    ],
+  });
+});

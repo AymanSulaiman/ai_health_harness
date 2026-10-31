@@ -20,7 +20,7 @@ def run(monkeypatch, *args: str) -> None:
 
 
 def test_steps_run_in_pipeline_order():
-    assert list(cli.STEPS) == ["generate", "ground-truth", "notes"]
+    assert list(cli.STEPS) == ["generate", "ground-truth", "notes", "med-reference"]
 
 
 def test_no_arguments_runs_every_step_in_order(monkeypatch, calls):

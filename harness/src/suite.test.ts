@@ -28,7 +28,7 @@ function fake() {
       const note = messages.at(-1)!.content;
       if (note === "note 3") throw new Error("connection refused");
       const summary = note === "note 2" ? { ...good, medications: [] } : good;
-      return { text: JSON.stringify(summary), input_tokens: 10, output_tokens: 5, latency_ms: 5 };
+      return { text: JSON.stringify(summary), input_tokens: 10, output_tokens: 5, latency_ms: 5, tool_calls: [] };
     },
   };
   return { client, stats };
@@ -70,7 +70,7 @@ test("judge scores sit beside the deterministic ones; a failing judge keeps thos
     async chat() {
       // the first case's judge replies fine; every later call is unusable
       const text = ++calls === 1 ? JSON.stringify({ faithfulness: grade, usefulness: grade, omissions: grade }) : "nope";
-      return { text, input_tokens: 1, output_tokens: 1, latency_ms: 1 };
+      return { text, input_tokens: 1, output_tokens: 1, latency_ms: 1, tool_calls: [] };
     },
   };
   const [ok, broken] = await runSuite({ cases: cases.slice(0, 2), client: fake().client, judge: judgeClient, suiteRunId: "s1", concurrency: 1, dir, log: () => {} });

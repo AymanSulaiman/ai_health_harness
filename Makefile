@@ -26,7 +26,9 @@ DBT_ARGS = --project-dir pipeline --profiles-dir pipeline
 transform:
 	@ls data/traces/*.jsonl >/dev/null 2>&1 || { echo "no trace files in data/traces: run 'bun run eval' first"; exit 1; }
 	$(DBT) source freshness $(DBT_ARGS)
-	$(DBT) build $(DBT_ARGS)
+	@# models first, then tests: a failing regression gate must not stop the dashboard's tables updating
+	$(DBT) run $(DBT_ARGS)
+	$(DBT) test $(DBT_ARGS)
 
 docs:
 	$(DBT) docs generate $(DBT_ARGS)

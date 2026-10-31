@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { TraceEvent } from "shared-types";
-import { ModelError, type Message, type ModelClient, type Reply } from "./model";
-import { SYSTEM_PROMPT, summarise } from "./summarise";
+import { ModelError, type ChatOptions, type Message, type ModelClient, type Reply } from "./model";
+import { SYSTEM_PROMPT, summarise, type Agent } from "./summarise";
 
 const GOOD = {
   narrative: "Stable.",
@@ -20,7 +20,7 @@ function scripted(...replies: (string | Error | Partial<Reply>)[]) {
       const next = replies.shift();
       if (next instanceof Error) throw next;
       const reply = typeof next === "string" ? { text: next } : next;
-      return { text: "", input_tokens: 100, output_tokens: 20, latency_ms: 5, ...reply };
+      return { text: "", input_tokens: 100, output_tokens: 20, latency_ms: 5, tool_calls: [], ...reply };
     },
   };
   return { client, sent };
@@ -91,4 +91,45 @@ test("a model failure on the retry keeps the first reply's tokens", async () => 
 test("token counts are null when the provider leaves them out", async () => {
   const { client } = scripted({ text: JSON.stringify(GOOD), input_tokens: null, output_tokens: null });
   expect(await summarise("n", client)).toMatchObject({ input_tokens: null, output_tokens: null });
+});
+
+const echo: Agent = {
+  version: "t",
+  promptVersion: "t",
+  systemPrompt: "use the tool",
+  tools: [{ spec: { name: "echo", description: "echo", parameters: {} }, run: ({ q }) => ({ heard: q }) }],
+};
+const call = (id: string, name: string, args: string) => ({ text: "", tool_calls: [{ id, name, arguments: args }] });
+
+test("tool calls run, are recorded, and their results go back to the model", async () => {
+  const { client, sent } = scripted(call("c1", "echo", '{"q":"lisnpr"}'), JSON.stringify(GOOD));
+  const run = await summarise("the note", client, echo);
+  expect(run.parsed_output).toEqual(GOOD);
+  expect(run.tool_calls).toEqual([{ name: "echo", input: { q: "lisnpr" }, output: { heard: "lisnpr" }, latency_ms: expect.any(Number) }]);
+  expect(sent[1]!.at(-1)).toEqual({ role: "tool", tool_call_id: "c1", content: '{"heard":"lisnpr"}' });
+  expect(run.input_tokens).toBe(200); // both turns count
+  asTrace(run);
+});
+
+test("a bad tool call is recorded with output null and the model is told why", async () => {
+  const { client, sent } = scripted(call("c1", "nope", "{}"), call("c2", "echo", "not json"), JSON.stringify(GOOD));
+  const run = await summarise("the note", client, echo);
+  expect(run.tool_calls.map((t) => t.output)).toEqual([null, null]);
+  expect(sent[1]!.at(-1)!.content).toContain("no tool named nope");
+  expect(run.parsed_output).toEqual(GOOD);
+  asTrace(run);
+});
+
+test("past the tool budget, calls are refused with an error and count as failed attempts", async () => {
+  const rounds = 14;
+  const { client, sent } = scripted(...Array.from({ length: rounds + 1 }, (_, i) => call(`c${i}`, "echo", "{}")), JSON.stringify(GOOD));
+  const run = await summarise("the note", client, echo);
+  expect(run.tool_calls).toHaveLength(rounds); // the extra call was not run
+  expect(sent.at(-1)!.at(-1)!.content).toContain("No more tool calls");
+  expect(run.parsed_output).toEqual(GOOD); // one refused turn, then a good answer
+
+  const stuck = scripted(...Array.from({ length: rounds + 2 }, (_, i) => call(`c${i}`, "echo", "{}")));
+  const failed = await summarise("the note", stuck.client, echo);
+  expect(failed.error).toEqual({ stage: "parse", message: `after 2 attempts: kept calling tools past ${rounds} rounds` });
+  asTrace(failed);
 });

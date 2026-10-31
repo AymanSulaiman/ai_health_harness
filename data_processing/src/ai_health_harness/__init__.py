@@ -4,6 +4,7 @@ uv run --project data_processing ai-health-harness               every step, in 
 uv run --project data_processing ai-health-harness generate      generate seeded Synthea patients into DuckDB
 uv run --project data_processing ai-health-harness ground-truth  build data/ground_truth.jsonl from the patients
 uv run --project data_processing ai-health-harness notes         render test-case notes into datasets/notes_<version>.jsonl
+uv run --project data_processing ai-health-harness med-reference write data/med_reference.json for the agent's drug lookup
 """
 
 import sys
@@ -28,7 +29,13 @@ def run_notes() -> None:
     notes.run()
 
 
-STEPS = {"generate": run_generate, "ground-truth": run_ground_truth, "notes": run_notes}
+def run_med_reference() -> None:
+    from ai_health_harness import med_reference
+
+    med_reference.run()
+
+
+STEPS = {"generate": run_generate, "ground-truth": run_ground_truth, "notes": run_notes, "med-reference": run_med_reference}
 
 
 def main() -> None:
